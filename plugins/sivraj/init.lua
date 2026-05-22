@@ -6,6 +6,8 @@ local common = require "core.common"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
+local state_filename = USERDIR .. PATHSEP .. "sivraj.lua"
+
 local function find_sidebar()
   for _, loaded_view in ipairs(core.root_view.root_node:get_children()) do
     if loaded_view._sivraj_treeview then
@@ -19,6 +21,31 @@ local function join_path(path, name)
     return path .. name
   end
   return path .. PATHSEP .. name
+end
+
+local function load_repos()
+  local ok, state = pcall(dofile, state_filename)
+  if not ok or type(state) ~= "table" or type(state.repos) ~= "table" then
+    return {}
+  end
+
+  local loaded_repos = {}
+  for _, repo_path in ipairs(state.repos) do
+    if type(repo_path) == "string" then
+      loaded_repos[#loaded_repos + 1] = repo_path
+    end
+  end
+  return loaded_repos
+end
+
+local repos = load_repos()
+
+local function save_repos()
+  local fp = io.open(state_filename, "w")
+  if fp then
+    fp:write("return { repos = ", common.serialize(repos), " }\n")
+    fp:close()
+  end
 end
 
 local function select_repo(path)
@@ -45,8 +72,6 @@ local function install_selection_handler(view)
   end
 end
 
-local repos = (find_sidebar() or {})._sivraj_repos or {}
-
 local backend = {
   roots = function()
     local roots = {}
@@ -66,7 +91,6 @@ local backend = {
 local function ensure_sidebar()
   local view = find_sidebar()
   if view then
-    view._sivraj_repos = repos
     view:set_backend(backend)
     install_selection_handler(view)
     return view
@@ -77,7 +101,6 @@ local function ensure_sidebar()
     backend = backend,
   })
   view._sivraj_treeview = true
-  view._sivraj_repos = repos
   install_selection_handler(view)
   view.node = node:split("left", view, { x = true }, true)
   return view
@@ -107,6 +130,7 @@ local function add_repo(path)
   local view = ensure_sidebar()
   if not has_repo(path) then
     repos[#repos + 1] = path
+    save_repos()
   end
   view.visible = true
   core.redraw = true
