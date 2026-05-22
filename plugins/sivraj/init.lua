@@ -126,14 +126,54 @@ local function has_repo(path)
   return false
 end
 
-local function add_repo(path)
-  local view = ensure_sidebar()
+local function append_repo(path)
   if not has_repo(path) then
     repos[#repos + 1] = path
+    return true
+  end
+  return false
+end
+
+local function add_repo(path)
+  local view = ensure_sidebar()
+  if append_repo(path) then
     save_repos()
   end
   view.visible = true
   core.redraw = true
+end
+
+local function scan_git_repos(path, found)
+  if is_git_repo(path) then
+    found[#found + 1] = path
+    return
+  end
+
+  for _, name in ipairs(system.list_dir(path) or {}) do
+    local child = join_path(path, name)
+    local info = system.get_file_info(child)
+    if info and info.type == "dir" then
+      scan_git_repos(child, found)
+    end
+  end
+end
+
+local function add_scanned_repos(path)
+  local found = {}
+  local added = 0
+  scan_git_repos(path, found)
+
+  for _, repo_path in ipairs(found) do
+    if append_repo(repo_path) then
+      added = added + 1
+    end
+  end
+
+  if added > 0 then
+    save_repos()
+    ensure_sidebar().visible = true
+    core.redraw = true
+  end
 end
 
 local function suggest_repo_path(text)
@@ -167,6 +207,25 @@ command.add(nil, {
         end
         if not is_git_repo(path) then
           core.error("Not a git repo: %s", text)
+          return false
+        end
+        return true
+      end,
+    })
+  end,
+
+  ["sivraj:scan-all-repos"] = function()
+    core.command_view:enter("Scan Repos", {
+      text = "~" .. PATHSEP,
+      submit = function(text)
+        add_scanned_repos(repo_path_from_text(text))
+      end,
+      suggest = suggest_repo_path,
+      validate = function(text)
+        local path = repo_path_from_text(text)
+        local info = path and system.get_file_info(path)
+        if not info or info.type ~= "dir" then
+          core.error("Not a directory: %s", text)
           return false
         end
         return true
