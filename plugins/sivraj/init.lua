@@ -3,6 +3,7 @@
 local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
+local git = require "plugins.sivraj.git"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
@@ -16,13 +17,6 @@ local function find_sidebar()
   end
 end
 
-local function join_path(path, name)
-  if path:sub(-1) == PATHSEP then
-    return path .. name
-  end
-  return path .. PATHSEP .. name
-end
-
 local function load_repos()
   local ok, state = pcall(dofile, state_filename)
   if not ok or type(state) ~= "table" or type(state.repos) ~= "table" then
@@ -30,9 +24,10 @@ local function load_repos()
   end
 
   local loaded_repos = {}
-  for _, repo_path in ipairs(state.repos) do
-    if type(repo_path) == "string" then
-      loaded_repos[#loaded_repos + 1] = repo_path
+  for _, repo in ipairs(state.repos) do
+    if type(repo) == "table" and type(repo.path) == "string" then
+      repo.worktrees = type(repo.worktrees) == "table" and repo.worktrees or {}
+      loaded_repos[#loaded_repos + 1] = repo
     end
   end
   return loaded_repos
@@ -48,6 +43,17 @@ local function save_repos()
   end
 end
 
+local function refresh_worktrees(repo)
+  repo.worktrees = git.worktrees(repo.path)
+end
+
+for _, repo in ipairs(repos) do
+  refresh_worktrees(repo)
+end
+if #repos > 0 then
+  save_repos()
+end
+
 local function select_repo(path)
   if core.project_dir == path then
     return
@@ -58,30 +64,39 @@ local function select_repo(path)
 end
 
 local function install_selection_handler(view)
-  view.activate_on_single_click = false
   if view._sivraj_original_set_selection then
-    return
+    view.set_selection = view._sivraj_original_set_selection
+    view._sivraj_original_set_selection = nil
   end
-  view._sivraj_original_set_selection = view.set_selection
-  function view:set_selection(selection, selection_y, center, instant)
-    self:_sivraj_original_set_selection(selection, selection_y, center, instant)
-    local node = selection and selection.node
-    if node and node.path then
-      select_repo(node.path)
-    end
+  view.activate_on_single_click = true
+end
+
+local function worktree_children(repo)
+  local children = {}
+  for _, worktree in ipairs(repo.worktrees or {}) do
+    children[#children + 1] = {
+      id = repo.path .. ":" .. worktree.path,
+      path = worktree.path,
+      label = worktree.branch,
+      kind = "worktree",
+      tooltip = worktree.path,
+      open = function(node) select_repo(node.path) end,
+    }
   end
+  return children
 end
 
 local backend = {
   roots = function()
     local roots = {}
-    for _, repo_path in ipairs(repos) do
+    for _, repo in ipairs(repos) do
       roots[#roots + 1] = {
-        id = repo_path,
-        path = repo_path,
-        label = common.basename(repo_path),
+        id = repo.path,
+        path = repo.path,
+        label = common.basename(repo.path),
         kind = "repo",
-        tooltip = repo_path,
+        tooltip = repo.path,
+        children = function() return worktree_children(repo) end,
       }
     end
     return roots
@@ -112,14 +127,9 @@ local function repo_path_from_text(text)
   return common.normalize_volume(path)
 end
 
-local function is_git_repo(path)
-  local info = path and system.get_file_info(join_path(path, ".git"))
-  return info and (info.type == "dir" or info.type == "file")
-end
-
 local function has_repo(path)
-  for _, repo_path in ipairs(repos) do
-    if repo_path == path then
+  for _, repo in ipairs(repos) do
+    if repo.path == path then
       return true
     end
   end
@@ -128,43 +138,32 @@ end
 
 local function append_repo(path)
   if not has_repo(path) then
-    repos[#repos + 1] = path
-    return true
+    local repo = { path = path, worktrees = {} }
+    repos[#repos + 1] = repo
+    return repo
   end
-  return false
 end
 
 local function add_repo(path)
   local view = ensure_sidebar()
-  if append_repo(path) then
+  local repo = append_repo(path)
+  if repo then
+    refresh_worktrees(repo)
     save_repos()
   end
   view.visible = true
   core.redraw = true
 end
 
-local function scan_git_repos(path, found)
-  if is_git_repo(path) then
-    found[#found + 1] = path
-    return
-  end
-
-  for _, name in ipairs(system.list_dir(path) or {}) do
-    local child = join_path(path, name)
-    local info = system.get_file_info(child)
-    if info and info.type == "dir" then
-      scan_git_repos(child, found)
-    end
-  end
-end
-
 local function add_scanned_repos(path)
   local found = {}
   local added = 0
-  scan_git_repos(path, found)
+  git.scan_repos(path, found)
 
   for _, repo_path in ipairs(found) do
-    if append_repo(repo_path) then
+    local repo = append_repo(repo_path)
+    if repo then
+      refresh_worktrees(repo)
       added = added + 1
     end
   end
@@ -205,7 +204,7 @@ command.add(nil, {
           core.error("Not a directory: %s", text)
           return false
         end
-        if not is_git_repo(path) then
+        if not git.is_repo(path) then
           core.error("Not a git repo: %s", text)
           return false
         end
