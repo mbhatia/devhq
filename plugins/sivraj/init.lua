@@ -17,10 +17,10 @@ local function find_sidebar()
   end
 end
 
-local function load_repos()
+local function load_state()
   local ok, state = pcall(dofile, state_filename)
   if not ok or type(state) ~= "table" or type(state.repos) ~= "table" then
-    return {}
+    return {}, {}, nil
   end
 
   local loaded_repos = {}
@@ -30,15 +30,18 @@ local function load_repos()
       loaded_repos[#loaded_repos + 1] = repo
     end
   end
-  return loaded_repos
+  return loaded_repos,
+    type(state.expanded) == "table" and state.expanded or {},
+    type(state.selected_worktree) == "string" and state.selected_worktree or nil
 end
 
-local repos = load_repos()
+local repos, expanded, selected_worktree = load_state()
 
-local function save_repos()
+local function save_state()
   local fp = io.open(state_filename, "w")
   if fp then
-    fp:write("return { repos = ", common.serialize(repos), " }\n")
+    fp:write("return { repos = ", common.serialize(repos), ", expanded = ",
+      common.serialize(expanded), ", selected_worktree = ", common.serialize(selected_worktree), " }\n")
     fp:close()
   end
 end
@@ -51,16 +54,25 @@ for _, repo in ipairs(repos) do
   refresh_worktrees(repo)
 end
 if #repos > 0 then
-  save_repos()
+  save_state()
 end
 
-local function select_repo(path)
+local function open_project(path, opened)
   if core.project_dir == path then
+    if opened then opened(path) end
     return
   end
   core.confirm_close_docs(core.docs, function(dirpath)
+    if opened then opened(dirpath) end
     core.open_folder_project(dirpath)
   end, path)
+end
+
+local function select_worktree(path)
+  open_project(path, function(opened_path)
+    selected_worktree = opened_path
+    save_state()
+  end)
 end
 
 local function install_selection_handler(view)
@@ -71,16 +83,33 @@ local function install_selection_handler(view)
   view.activate_on_single_click = true
 end
 
+local function worktree_id(repo, worktree)
+  return repo.path .. ":" .. worktree.path
+end
+
+local function select_worktree_node(view, path)
+  for _, repo in ipairs(repos) do
+    for _, worktree in ipairs(repo.worktrees or {}) do
+      if worktree.path == path then
+        expanded[repo.path] = true
+        view:set_selection_to_id(worktree_id(repo, worktree), false, true, true)
+        core.redraw = true
+        return
+      end
+    end
+  end
+end
+
 local function worktree_children(repo)
   local children = {}
   for _, worktree in ipairs(repo.worktrees or {}) do
     children[#children + 1] = {
-      id = repo.path .. ":" .. worktree.path,
+      id = worktree_id(repo, worktree),
       path = worktree.path,
       label = worktree.branch,
       kind = "worktree",
       tooltip = worktree.path,
-      open = function(node) select_repo(node.path) end,
+      open = function(node) select_worktree(node.path) end,
     }
   end
   return children
@@ -96,6 +125,11 @@ local backend = {
         label = common.basename(repo.path),
         kind = "repo",
         tooltip = repo.path,
+        is_expanded = function(node) return expanded[node.path] == true end,
+        set_expanded = function(node, value)
+          expanded[node.path] = not not value
+          save_state()
+        end,
         children = function() return worktree_children(repo) end,
       }
     end
@@ -140,6 +174,7 @@ local function append_repo(path)
   if not has_repo(path) then
     local repo = { path = path, worktrees = {} }
     repos[#repos + 1] = repo
+    expanded[path] = false
     return repo
   end
 end
@@ -149,7 +184,7 @@ local function add_repo(path)
   local repo = append_repo(path)
   if repo then
     refresh_worktrees(repo)
-    save_repos()
+    save_state()
   end
   view.visible = true
   core.redraw = true
@@ -169,7 +204,7 @@ local function add_scanned_repos(path)
   end
 
   if added > 0 then
-    save_repos()
+    save_state()
     ensure_sidebar().visible = true
     core.redraw = true
   end
@@ -233,4 +268,13 @@ command.add(nil, {
   end,
 })
 
-return ensure_sidebar()
+local sidebar = ensure_sidebar()
+local selected_info = selected_worktree and system.get_file_info(selected_worktree)
+if selected_info and selected_info.type == "dir" then
+  if core.project_dir ~= selected_worktree then
+    core.open_folder_project(selected_worktree)
+  end
+  select_worktree_node(sidebar, selected_worktree)
+end
+
+return sidebar
