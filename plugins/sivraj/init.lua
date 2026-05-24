@@ -3,6 +3,7 @@
 local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
+local agents = require "plugins.sivraj.agents"
 local git = require "plugins.sivraj.git"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
@@ -26,7 +27,7 @@ local function load_state()
   local loaded_repos = {}
   for _, repo in ipairs(state.repos) do
     if type(repo) == "table" and type(repo.path) == "string" then
-      repo.worktrees = type(repo.worktrees) == "table" and repo.worktrees or {}
+      repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
       loaded_repos[#loaded_repos + 1] = repo
     end
   end
@@ -47,7 +48,7 @@ local function save_state()
 end
 
 local function refresh_worktrees(repo)
-  repo.worktrees = git.worktrees(repo.path)
+  repo.worktrees = agents.merge_worktrees(repo.worktrees, git.worktrees(repo.path))
 end
 
 for _, repo in ipairs(repos) do
@@ -63,8 +64,8 @@ local function open_project(path, opened)
     return
   end
   core.confirm_close_docs(core.docs, function(dirpath)
-    if opened then opened(dirpath) end
     core.open_folder_project(dirpath)
+    if opened then opened(dirpath) end
   end, path)
 end
 
@@ -109,6 +110,14 @@ local function worktree_children(repo)
       label = worktree.branch,
       kind = "worktree",
       tooltip = worktree.path,
+      can_expand = function() return #(worktree.agents or {}) > 0 end,
+      open_on_expand = true,
+      is_expanded = function(node) return expanded[node.id] == true end,
+      set_expanded = function(node, value)
+        expanded[node.id] = not not value
+        save_state()
+      end,
+      children = function() return agents.children(worktree) end,
       open = function(node) select_worktree(node.path) end,
     }
   end
@@ -265,6 +274,23 @@ command.add(nil, {
         return true
       end,
     })
+  end,
+})
+
+agents.setup({
+  repos = repos,
+  open_project = open_project,
+  save_state = save_state,
+  set_selected_worktree = function(path)
+    selected_worktree = path
+    save_state()
+  end,
+  expand_worktree = function(worktree)
+    for _, repo in ipairs(repos) do
+      for _, repo_worktree in ipairs(repo.worktrees or {}) do
+        if repo_worktree == worktree then expanded[worktree_id(repo, worktree)] = true end
+      end
+    end
   end,
 })
 
