@@ -5,6 +5,7 @@ local command = require "core.command"
 local common = require "core.common"
 local agents = require "plugins.sivraj.agents"
 local git = require "plugins.sivraj.git"
+local git_doc_view = require "plugins.sivraj.git_doc_view"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
@@ -275,7 +276,13 @@ command.add(nil, {
       end,
     })
   end,
+
+  ["sivraj:toggle-git-diff-overlay"] = function()
+    git_doc_view.toggle()
+  end,
 })
+
+git_doc_view.setup()
 
 agents.setup({
   repos = repos,

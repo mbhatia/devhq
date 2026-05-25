@@ -1,5 +1,6 @@
 -- mod-version:3
 
+local common = require "core.common"
 local process = require "process"
 
 local M = {}
@@ -11,7 +12,11 @@ local function join_path(path, name)
   return path .. PATHSEP .. name
 end
 
-local function run(path, args)
+local function trim(text)
+  return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function run(path, args, yielding)
   local command = { "git", "-C", path }
   for _, arg in ipairs(args) do
     command[#command + 1] = arg
@@ -35,9 +40,27 @@ local function run(path, args)
     if chunk ~= "" then
       chunks[#chunks + 1] = chunk
     end
+    if yielding then
+      coroutine.yield(0)
+    end
   end
 
   return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
+end
+
+local function rev_exists(path, ref, yielding)
+  local _, code = run(path, { "rev-parse", "--verify", ref .. "^{commit}" }, yielding)
+  return code == 0
+end
+
+local function merge_base(path, ref, yielding)
+  local output, code = run(path, { "merge-base", "HEAD", ref }, yielding)
+  if code == 0 then
+    output = trim(output)
+    if output ~= "" then
+      return output
+    end
+  end
 end
 
 function M.is_repo(path)
@@ -83,6 +106,42 @@ function M.worktrees(path)
   end
 
   return list
+end
+
+function M.parent_commit(path, yielding)
+  local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
+  local candidates = {}
+  if code == 0 and trim(output) ~= "" then
+    candidates[#candidates + 1] = trim(output)
+  end
+  for _, ref in ipairs({ "origin/main", "origin/develop", "origin/master", "main", "develop", "master" }) do
+    candidates[#candidates + 1] = ref
+  end
+
+  for _, ref in ipairs(candidates) do
+    if rev_exists(path, ref, yielding) then
+      local base = merge_base(path, ref, yielding)
+      if base then
+        return base, ref
+      end
+    end
+  end
+end
+
+function M.diff_against_parent(path, file, yielding)
+  local parent, ref = M.parent_commit(path, yielding)
+  if not parent then
+    return nil, "No parent commit found"
+  end
+
+  local rel = common.relative_path(path, file)
+  local output, code = run(path, {
+    "diff", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C", parent, "--", rel
+  }, yielding)
+  if code ~= 0 then
+    return nil, output
+  end
+  return output, nil, { parent = parent, ref = ref, path = rel }
 end
 
 return M
