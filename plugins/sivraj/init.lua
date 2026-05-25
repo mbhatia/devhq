@@ -4,6 +4,7 @@ local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
 local agents = require "plugins.sivraj.agents"
+local comments = require "plugins.sivraj.comments"
 local git = require "plugins.sivraj.git"
 local git_doc_view = require "plugins.sivraj.git_doc_view"
 local TreeView = require "libraries.generic_treeview"
@@ -283,6 +284,7 @@ command.add(nil, {
 })
 
 git_doc_view.setup()
+comments.setup()
 
 agents.setup({
   repos = repos,

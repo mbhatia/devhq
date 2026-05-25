@@ -129,6 +129,34 @@ function M.children(w)
   return nodes
 end
 
+function M.active_for_worktree(path)
+  local items = {}
+  if not rt.ctx then return items end
+  for _, r in ipairs(rt.ctx.repos) do
+    for _, w in ipairs(r.worktrees or {}) do
+      if w.path == path then
+        for _, a in ipairs(w.agents or {}) do
+          local k, v = key(w, a), rt.views[key(w, a)]
+          if v and v.terminal then
+            items[#items + 1] = { key = k, label = label(a), profile = a.profile, name = a.name }
+          end
+        end
+      end
+    end
+  end
+  return items
+end
+
+function M.send_to_agent(item, text)
+  local v = item and rt.views[item.key]
+  if v and v.terminal then
+    v.terminal:input_text(text)
+    focus(v)
+    return true
+  end
+  return false
+end
+
 function M.setup(ctx)
   rt.ctx = ctx
   command.add(nil, {

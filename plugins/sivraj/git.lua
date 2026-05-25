@@ -144,4 +144,18 @@ function M.diff_against_parent(path, file, yielding)
   return output, nil, { parent = parent, ref = ref, path = rel }
 end
 
+function M.commit_for_file(path, file, yielding)
+  local rel = common.relative_path(path, file)
+  local output, code = run(path, { "status", "--porcelain", "--", rel }, yielding)
+  if code == 0 and trim(output) ~= "" then
+    return "uncommitted"
+  end
+
+  output, code = run(path, { "rev-parse", "HEAD" }, yielding)
+  if code ~= 0 or trim(output) == "" then
+    return "uncommitted"
+  end
+  return trim(output)
+end
+
 return M
