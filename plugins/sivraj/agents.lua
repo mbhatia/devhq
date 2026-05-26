@@ -22,6 +22,7 @@ config.plugins.sivraj.agents.codex = common.merge({
 local function profiles() return config.plugins.sivraj.agents or {} end
 local function key(w, a) return w.path .. "\0" .. a.profile .. "\0" .. a.name end
 local function label(a) return (a.needs_input and "! " or "") .. a.profile .. ": " .. a.name end
+local function agent_id(a) return (a.profile .. ":" .. a.name):gsub("%s+", "-") end
 local function icon(a)
   return function(_, active, hovered)
     local p = profiles()[a.profile] or {}
@@ -78,7 +79,7 @@ local function launch(w, a, action)
     v = ghostty.open_tab {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
       command = cmd, shell = true, close_on_exit = "never",
-      env = { REPO = parent_repo_path(w) },
+      env = { REPO = parent_repo_path(w), AGENT_ID = agent_id(a) },
     }
     v.sivraj_agent_key, rt.views[k] = k, v
   end
