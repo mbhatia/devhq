@@ -57,6 +57,33 @@ local function find_agent(k)
   end
 end
 
+local function clear_attention(v)
+  local _, a = find_agent(v and v.sivraj_agent_key or "")
+  if a and a.needs_input then
+    a.needs_input = false
+    set_title(v, a)
+    save()
+  end
+end
+
+local function install_attention_clearer(v)
+  if not v or v.sivraj_attention_clearer then return end
+  v.sivraj_attention_clearer = true
+
+  local on_text_input = v.on_text_input
+  function v:on_text_input(text)
+    clear_attention(self)
+    if on_text_input then return on_text_input(self, text) end
+  end
+
+  local on_key_pressed = v.on_key_pressed
+  function v:on_key_pressed(...)
+    clear_attention(self)
+    if on_key_pressed then return on_key_pressed(self, ...) end
+    return false
+  end
+end
+
 local function current_worktree()
   for _, r in ipairs(rt.ctx.repos) do
     for _, w in ipairs(r.worktrees or {}) do
@@ -81,6 +108,7 @@ local function launch(w, a, action)
       command = cmd, shell = true, close_on_exit = "never",
       env = { REPO = parent_repo_path(w), AGENT_ID = agent_id(a) },
     }
+    install_attention_clearer(v)
     v.sivraj_agent_key, rt.views[k] = k, v
   end
   a.needs_input = false
@@ -221,7 +249,17 @@ if not rt.events_registered then
   end)
   core.add_thread(function()
     while true do
-      for _, v in pairs(rt.views) do if v.terminal and not node(v) then v:update() end end
+      local active = core.active_view
+      if active ~= rt.last_active_view then
+        rt.last_active_view = active
+        clear_attention(active)
+      end
+      for _, v in pairs(rt.views) do
+        if v.terminal then
+          install_attention_clearer(v)
+          if not node(v) then v:update() end
+        end
+      end
       coroutine.yield(0.2)
     end
   end)
