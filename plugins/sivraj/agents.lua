@@ -14,8 +14,8 @@ core.sivraj_agents_runtime = rt
 config.plugins.sivraj = config.plugins.sivraj or {}
 config.plugins.sivraj.agents = config.plugins.sivraj.agents or {}
 config.plugins.sivraj.agents.codex = common.merge({
-  start = "codex",
-  resume = "codex resume",
+  start = "codex --add-dir $REPO",
+  resume = "codex --add-dir $REPO resume",
   icon = "@",
 }, config.plugins.sivraj.agents.codex)
 
@@ -32,6 +32,18 @@ end
 local function node(v) return v and core.root_view.root_node:get_node_for_view(v) end
 local function save() if rt.ctx then rt.ctx.save_state() end core.redraw = true end
 local function set_title(v, a) if v then v.title = label(a) end end
+
+local function parent_repo_path(w)
+  if not rt.ctx then return w.path end
+  for _, r in ipairs(rt.ctx.repos) do
+    for _, rw in ipairs(r.worktrees or {}) do
+      if rw == w or rw.path == w.path then
+        return r.path
+      end
+    end
+  end
+  return w.path
+end
 
 local function find_agent(k)
   if not rt.ctx then return end
@@ -66,6 +78,7 @@ local function launch(w, a, action)
     v = ghostty.open_tab {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
       command = cmd, shell = true, close_on_exit = "never",
+      env = { REPO = parent_repo_path(w) },
     }
     v.sivraj_agent_key, rt.views[k] = k, v
   end
