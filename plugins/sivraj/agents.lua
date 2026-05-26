@@ -4,6 +4,7 @@ local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
 local config = require "core.config"
+local style = require "core.style"
 local ghostty = require "plugins.ghostty"
 
 local M = {}
@@ -12,12 +13,22 @@ core.sivraj_agents_runtime = rt
 
 config.plugins.sivraj = config.plugins.sivraj or {}
 config.plugins.sivraj.agents = config.plugins.sivraj.agents or {}
-config.plugins.sivraj.agents.codex = config.plugins.sivraj.agents.codex
-  or { start = "codex", resume = "codex resume" }
+config.plugins.sivraj.agents.codex = common.merge({
+  start = "codex",
+  resume = "codex resume",
+  icon = "@",
+}, config.plugins.sivraj.agents.codex)
 
 local function profiles() return config.plugins.sivraj.agents or {} end
 local function key(w, a) return w.path .. "\0" .. a.profile .. "\0" .. a.name end
 local function label(a) return (a.needs_input and "! " or "") .. a.profile .. ": " .. a.name end
+local function icon(a)
+  return function(_, active, hovered)
+    local p = profiles()[a.profile] or {}
+    local color = p.icon_color or (a.needs_input and style.warn) or ((active or hovered) and style.accent) or style.dim
+    return p.icon or "@", p.icon_font or style.font, color
+  end
+end
 local function node(v) return v and core.root_view.root_node:get_node_for_view(v) end
 local function save() if rt.ctx then rt.ctx.save_state() end core.redraw = true end
 local function set_title(v, a) if v then v.title = label(a) end end
@@ -124,7 +135,8 @@ function M.children(w)
   local nodes = {}
   for _, a in ipairs(w.agents or {}) do
     nodes[#nodes + 1] = { id = "agent:" .. key(w, a), label = label(a),
-      kind = "agent", tooltip = w.path, open = function() open_agent(w, a) end }
+      kind = "agent", tooltip = w.path, icon = icon(a),
+      open = function() open_agent(w, a) end }
   end
   return nodes
 end
