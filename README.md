@@ -33,8 +33,7 @@ Small git boundary. It shells out to `git` and exposes:
 `manifest.json`
 
 LPM package manifest. The `sivraj` plugin depends on `generic_treeview`.
-`generic_treeview` is not distributed by this repo. It is declared as a remote
-dependency sourced from `lite-xl-git-browser`.
+`generic_treeview` is vendored in this repo under `libraries/`.
 
 `USERDIR/sivraj.lua`
 
@@ -72,19 +71,19 @@ From another directory:
 lpm --repository=/path/to/sivraj plugin install sivraj
 ```
 
-LPM resolves `generic_treeview` from the remote declared in `manifest.json`.
+LPM installs `generic_treeview` from the vendored library declared in
+`manifest.json`.
 
 ## Run For Development
 
 Use this repo as the Lite XL user directory:
 
 ```sh
-lpm --repository="$PWD" --userdir="$PWD" library install generic_treeview
 LITE_USERDIR="$PWD" "/Applications/Lite XL.app/Contents/MacOS/lite-xl"
 ```
 
-The first command installs only the external treeview library into this working
-tree. The plugin itself is loaded from `plugins/sivraj`.
+The vendored treeview library is loaded from `libraries/generic_treeview.lua`.
+The plugin itself is loaded from `plugins/sivraj`.
 
 The development state file will be written to:
 

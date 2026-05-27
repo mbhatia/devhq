@@ -7,7 +7,7 @@
       "type": "library",
       "name": "Generic TreeView",
       "description": "Reusable tree view widget library.",
-      "remote": "https://github.com/mbhatia/lite-xl-git-browser.git:6ee1d0f894c23b5107274e3f50ad280ab5cc5f81"
+      "path": "libraries/generic_treeview.lua"
     },
     {
       "id": "sivraj",
