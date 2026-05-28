@@ -105,7 +105,7 @@ local function launch(w, a, action)
     if not cmd then return core.error("Unknown Sivraj agent profile: %s", a.profile) end
     v = ghostty.open_tab {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-      command = cmd, shell = true, close_on_exit = "never",
+      command = cmd, shell = true, agent_close_on_exit = "clean_exit",
       env = { REPO = parent_repo_path(w), AGENT_ID = agent_id(a) },
     }
     install_attention_clearer(v)
@@ -234,10 +234,6 @@ if not rt.events_registered then
   ghostty.on("title-changed", function(e)
     local _, a = find_agent(e.view and e.view.sivraj_agent_key or "")
     if a then set_title(e.view, a); core.redraw = true end
-  end)
-  ghostty.on("terminal-closed", function(e)
-    local k = e.view and e.view.sivraj_agent_key
-    if k then remove_agent(k) end
   end)
   ghostty.on("terminal-exited", function(e)
     local k = e.view and e.view.sivraj_agent_key
