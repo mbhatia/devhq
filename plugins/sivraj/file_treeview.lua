@@ -4,6 +4,11 @@ local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
 local style = require "core.style"
+local Doc = require "core.doc"
+local DocView = require "core.docview"
+local EmptyView = require "core.emptyview"
+local Node = require "core.node"
+local RootView = require "core.rootview"
 local git = require "plugins.sivraj.git"
 local default_treeview = require "plugins.treeview"
 
@@ -16,6 +21,7 @@ local project_tree = {
   refreshed = {},
   interval = 2,
 }
+local ephemeral_view
 
 local tree_modes = {
   { mode = "uncommitted", label = "Uncomm", tooltip = "Only show uncommitted changes" },
@@ -145,6 +151,139 @@ local function draw_toolbar(view)
   end
 end
 
+local function get_view_node(view)
+  return view and core.root_view.root_node:get_node_for_view(view)
+end
+
+local function promote_ephemeral(view)
+  if not (view and view._sivraj_ephemeral) then return end
+  view._sivraj_ephemeral = nil
+  if ephemeral_view == view then ephemeral_view = nil end
+  core.redraw = true
+end
+
+local function close_ephemeral(except_doc)
+  local view, node = ephemeral_view, get_view_node(ephemeral_view)
+  if not (view and node) then
+    ephemeral_view = nil
+    return
+  end
+  if except_doc and view.doc == except_doc then return end
+  if view.doc and view.doc:is_dirty() then
+    promote_ephemeral(view)
+    return
+  end
+  ephemeral_view = nil
+  view._sivraj_ephemeral = nil
+  if #node.views > 1 then
+    local idx = node:get_view_idx(view)
+    if idx then
+      table.remove(node.views, idx)
+      if node.active_view == view then
+        node:set_active_view(node.views[idx] or node.views[#node.views])
+      end
+    end
+  else
+    node.views = {}
+    node:add_view(EmptyView())
+  end
+  core.root_view.root_node:update_layout()
+  core.redraw = true
+end
+
+local function has_persistent_view(doc)
+  for _, view in ipairs(core.get_views_referencing_doc(doc)) do
+    if not view._sivraj_ephemeral then return true end
+  end
+end
+
+local function replace_ephemeral(doc, ephemeral)
+  local old_view, node = ephemeral_view, get_view_node(ephemeral_view)
+  local idx = node and node:get_view_idx(old_view)
+  if not idx then return end
+  if old_view.doc and old_view.doc:is_dirty() then
+    promote_ephemeral(old_view)
+    return
+  end
+
+  local view = DocView(doc)
+  node.views[idx] = view
+  node:set_active_view(view)
+  view:scroll_to_line(view.doc:get_selection(), true, true)
+  if ephemeral then
+    view._sivraj_ephemeral = true
+    ephemeral_view = view
+  else
+    ephemeral_view = nil
+  end
+  old_view._sivraj_ephemeral = nil
+  core.root_view.root_node:update_layout()
+  core.redraw = true
+  return view
+end
+
+local function activate_previous_editor()
+  if core.last_active_view and core.active_view == default_treeview then
+    core.set_active_view(core.last_active_view)
+  end
+end
+
+local function promote_ephemeral_item(item)
+  local view, node = ephemeral_view, get_view_node(ephemeral_view)
+  local doc_filename = core.normalize_to_project_dir(item.abs_filename)
+  local abs_filename = core.project_absolute_path(doc_filename)
+  if not (view and node and view.doc and view.doc.abs_filename == abs_filename) then
+    return false
+  end
+  promote_ephemeral(view)
+  node:set_active_view(view)
+  return true
+end
+
+local function open_file_item(item, ephemeral)
+  if not ephemeral and promote_ephemeral_item(item) then return core.active_view end
+  activate_previous_editor()
+  local doc_filename = core.normalize_to_project_dir(item.abs_filename)
+  local doc = core.open_doc(doc_filename)
+  local persistent = has_persistent_view(doc)
+  local node = get_view_node(ephemeral_view)
+  if node and ephemeral_view.doc == doc and not persistent then
+    if ephemeral then
+      node:set_active_view(ephemeral_view)
+    else
+      promote_ephemeral(ephemeral_view)
+      node:set_active_view(ephemeral_view)
+    end
+    return ephemeral_view
+  end
+  if node and not persistent then
+    local view = replace_ephemeral(doc, ephemeral)
+    if view then return view end
+  end
+  if not persistent then
+    close_ephemeral(doc)
+  end
+  local view = core.root_view:open_doc(doc)
+  if ephemeral and not persistent then
+    view._sivraj_ephemeral = true
+    ephemeral_view = view
+  else
+    promote_ephemeral(view)
+  end
+  return view
+end
+
+local function italic_font(font)
+  if not style._sivraj_ephemeral_font
+      or style._sivraj_ephemeral_font_base ~= font
+      or style._sivraj_ephemeral_font_size ~= font:get_size() then
+    style._sivraj_ephemeral_font = font:copy(font:get_size(), { italic = true })
+    style._sivraj_ephemeral_font_base = font
+    style._sivraj_ephemeral_font_size = font:get_size()
+  end
+  return style._sivraj_ephemeral_font
+end
+
 local function install_project_tree_filter()
   if default_treeview._sivraj_filter_originals then return end
 
@@ -159,6 +298,9 @@ local function install_project_tree_filter()
     on_mouse_pressed = default_treeview.on_mouse_pressed,
     on_mouse_moved = default_treeview.on_mouse_moved,
     on_mouse_left = default_treeview.on_mouse_left,
+    doc_on_text_change = Doc.on_text_change,
+    node_draw_tab_title = Node.draw_tab_title,
+    root_on_mouse_pressed = RootView.on_mouse_pressed,
   }
   default_treeview._sivraj_filter_originals = originals
 
@@ -270,11 +412,49 @@ local function install_project_tree_filter()
     return x, y, font:get_width(text) + 2 * style.padding.x, h
   end
 
+  function Doc:on_text_change(...)
+    promote_ephemeral((ephemeral_view and ephemeral_view.doc == self) and ephemeral_view)
+    return originals.doc_on_text_change(self, ...)
+  end
+
+  function Node:draw_tab_title(view, font, ...)
+    if view and view._sivraj_ephemeral then
+      font = italic_font(font)
+    end
+    return originals.node_draw_tab_title(self, view, font, ...)
+  end
+
+  function RootView:on_mouse_pressed(button, x, y, clicks)
+    local node = self.root_node:get_child_overlapping_point(x, y)
+    local idx = node and node:get_tab_overlapping_point(x, y)
+    if button == "left" and clicks > 1 and idx and node.hovered_close ~= idx then
+      promote_ephemeral(node.views[idx])
+    end
+    return originals.root_on_mouse_pressed(self, button, x, y, clicks)
+  end
+
   command.add(nil, {
     ["treeview-filter:full"] = function() project_tree.mode = "full"; refresh_project_tree_git(false); core.redraw = true end,
     ["treeview-filter:uncommitted"] = function() project_tree.mode = "uncommitted"; refresh_project_tree_git(true); core.redraw = true end,
     ["treeview-filter:staged"] = function() project_tree.mode = "staged"; refresh_project_tree_git(true); core.redraw = true end,
     ["treeview-filter:head"] = function() project_tree.mode = "head"; refresh_project_tree_git(true); core.redraw = true end,
+  })
+
+  command.add(function()
+    return core.active_view == default_treeview
+  end, {
+    ["treeview:select-and-open"] = function(_, _, clicks)
+      local view = default_treeview
+      if not view.hovered_item then return end
+      view:set_selection(view.hovered_item)
+      if view.hovered_item.type == "dir" then
+        command.perform "treeview:open"
+      else
+        core.try(function()
+          open_file_item(view.hovered_item, (clicks or 1) < 2)
+        end)
+      end
+    end,
   })
 end
 
