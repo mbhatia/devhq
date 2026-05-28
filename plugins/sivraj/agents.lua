@@ -34,16 +34,28 @@ local function node(v) return v and core.root_view.root_node:get_node_for_view(v
 local function save() if rt.ctx then rt.ctx.save_state() end core.redraw = true end
 local function set_title(v, a) if v then v.title = label(a) end end
 
-local function parent_repo_path(w)
-  if not rt.ctx then return w.path end
+local function parent_repo(w)
+  if not rt.ctx then return end
   for _, r in ipairs(rt.ctx.repos) do
     for _, rw in ipairs(r.worktrees or {}) do
       if rw == w or rw.path == w.path then
-        return r.path
+        return r
       end
     end
   end
+end
+
+local function parent_repo_path(w)
+  local r = parent_repo(w)
+  if r then
+    return r.path
+  end
   return w.path
+end
+
+local function parent_repo_id(w)
+  local r = parent_repo(w)
+  return common.basename((r and r.path) or w.path)
 end
 
 local function find_agent(k)
@@ -106,7 +118,7 @@ local function launch(w, a, action)
     v = ghostty.open_tab {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
       command = cmd, shell = true, agent_close_on_exit = "clean_exit",
-      env = { REPO = parent_repo_path(w), AGENT_ID = agent_id(a) },
+      env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
     }
     install_attention_clearer(v)
     v.sivraj_agent_key, rt.views[k] = k, v
