@@ -4,7 +4,6 @@ local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
 local style = require "core.style"
-local View = require "core.view"
 local git = require "plugins.sivraj.git"
 local default_treeview = require "plugins.treeview"
 
@@ -106,30 +105,35 @@ local function git_suffix(item)
   return " " .. code
 end
 
-local TreeFilterToolbar = View:extend()
+local function toolbar_height()
+  return style.font:get_height() + style.padding.y * 2
+end
 
-function TreeFilterToolbar:__tostring() return "TreeFilterToolbar" end
-function TreeFilterToolbar:new() TreeFilterToolbar.super.new(self); self.visible = true; self.tooltip = false end
-function TreeFilterToolbar:get_name() return nil end
-function TreeFilterToolbar:update() self.size.y = style.font:get_height() + style.padding.y * 2; TreeFilterToolbar.super.update(self) end
-
-function TreeFilterToolbar:each_item()
-  local ox, oy = self:get_content_offset()
+local function each_toolbar_item(view)
+  local ox, oy = view.position.x, view.position.y
   local h = style.font:get_height() + style.padding.y * 2
-  local w = math.floor(self.size.x / #tree_modes)
+  local w = math.floor(view.size.x / #tree_modes)
   local i = 0
   return function()
     i = i + 1
     local mode = tree_modes[i]
-    if mode then return mode, ox + (i - 1) * w, oy, i == #tree_modes and self.size.x - (i - 1) * w or w, h end
+    if mode then return mode, ox + (i - 1) * w, oy, i == #tree_modes and view.size.x - (i - 1) * w or w, h end
   end
 end
 
-function TreeFilterToolbar:draw()
-  self:draw_background(style.background2)
-  for item, x, y, w, h in self:each_item() do
+local function toolbar_item_at(view, px, py)
+  for item, x, y, w, h in each_toolbar_item(view) do
+    if px > x and py > y and px <= x + w and py <= y + h then
+      return item
+    end
+  end
+end
+
+local function draw_toolbar(view)
+  renderer.draw_rect(view.position.x, view.position.y, view.size.x, toolbar_height(), style.background2)
+  for item, x, y, w, h in each_toolbar_item(view) do
     local active = project_tree.mode == item.mode
-    local hovered = self.hovered_item == item
+    local hovered = view._sivraj_filter_hovered_item == item
     if active then
       renderer.draw_rect(x, y, w, h, style.line_highlight)
     elseif hovered then
@@ -141,40 +145,6 @@ function TreeFilterToolbar:draw()
   end
 end
 
-function TreeFilterToolbar:on_mouse_pressed(button)
-  if button ~= "left" then return true end
-  if self.hovered_item then
-    project_tree.mode = self.hovered_item.mode
-    default_treeview.selected_item = nil
-    refresh_project_tree_git(true)
-    core.redraw = true
-  end
-  return true
-end
-
-function TreeFilterToolbar:on_mouse_moved(px, py, ...)
-  TreeFilterToolbar.super.on_mouse_moved(self, px, py, ...)
-  self.hovered_item = nil
-  for item, x, y, w, h in self:each_item() do
-    if px > x and py > y and px <= x + w and py <= y + h then
-      self.hovered_item = item
-      core.status_view:show_tooltip(item.tooltip)
-      self.tooltip = true
-      return
-    end
-  end
-  if self.tooltip then
-    core.status_view:remove_tooltip()
-    self.tooltip = false
-  end
-end
-
-function TreeFilterToolbar:on_mouse_left()
-  if self.tooltip then core.status_view:remove_tooltip() end
-  self.tooltip = false
-  self.hovered_item = nil
-end
-
 local function install_project_tree_filter()
   if default_treeview._sivraj_filter_originals then return end
 
@@ -183,12 +153,27 @@ local function install_project_tree_filter()
     each_item = default_treeview.each_item,
     get_item_text = default_treeview.get_item_text,
     get_text_bounding_box = default_treeview.get_text_bounding_box,
+    get_content_offset = default_treeview.get_content_offset,
+    get_scrollable_size = default_treeview.get_scrollable_size,
+    draw = default_treeview.draw,
+    on_mouse_pressed = default_treeview.on_mouse_pressed,
+    on_mouse_moved = default_treeview.on_mouse_moved,
+    on_mouse_left = default_treeview.on_mouse_left,
   }
   default_treeview._sivraj_filter_originals = originals
 
   function default_treeview:update(...)
     refresh_project_tree_git(false)
     return originals.update(self, ...)
+  end
+
+  function default_treeview:get_content_offset()
+    local x, y = originals.get_content_offset(self)
+    return x, y + toolbar_height()
+  end
+
+  function default_treeview:get_scrollable_size()
+    return originals.get_scrollable_size(self) + toolbar_height()
   end
 
   function default_treeview:each_item()
@@ -235,6 +220,50 @@ local function install_project_tree_filter()
     return text .. git_suffix(item), font, color
   end
 
+  function default_treeview:draw(...)
+    originals.draw(self, ...)
+    draw_toolbar(self)
+  end
+
+  function default_treeview:on_mouse_pressed(button, x, y, clicks)
+    local item = toolbar_item_at(self, x, y)
+    if item then
+      if button == "left" then
+        project_tree.mode = item.mode
+        self.selected_item = nil
+        refresh_project_tree_git(true)
+        core.redraw = true
+      end
+      return true
+    end
+    return originals.on_mouse_pressed(self, button, x, y, clicks)
+  end
+
+  function default_treeview:on_mouse_moved(px, py, ...)
+    local item = toolbar_item_at(self, px, py)
+    if item then
+      self.hovered_item = nil
+      self._sivraj_filter_hovered_item = item
+      self.tooltip.x, self.tooltip.y = nil, nil
+      core.status_view:show_tooltip(item.tooltip)
+      self._sivraj_filter_tooltip = true
+      return
+    end
+    if self._sivraj_filter_tooltip then
+      core.status_view:remove_tooltip()
+      self._sivraj_filter_tooltip = false
+    end
+    self._sivraj_filter_hovered_item = nil
+    return originals.on_mouse_moved(self, px, py, ...)
+  end
+
+  function default_treeview:on_mouse_left(...)
+    if self._sivraj_filter_tooltip then core.status_view:remove_tooltip() end
+    self._sivraj_filter_tooltip = false
+    self._sivraj_filter_hovered_item = nil
+    return originals.on_mouse_left(self, ...)
+  end
+
   function default_treeview:get_text_bounding_box(item, x, y, w, h)
     x, y, w, h = originals.get_text_bounding_box(self, item, x, y, w, h)
     local text, font = self:get_item_text(item, false, false)
@@ -249,18 +278,8 @@ local function install_project_tree_filter()
   })
 end
 
-local function install_project_tree_toolbar()
-  if default_treeview._sivraj_filter_toolbar then return end
-  local node = core.root_view.root_node:get_node_for_view(default_treeview)
-  if not node then return end
-  local toolbar = TreeFilterToolbar()
-  default_treeview._sivraj_filter_toolbar = toolbar
-  toolbar.node = node:split("up", toolbar, { y = true })
-end
-
 function M.setup()
   install_project_tree_filter()
-  install_project_tree_toolbar()
   refresh_project_tree_git(true)
 end
 
