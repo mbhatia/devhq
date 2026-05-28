@@ -21,7 +21,7 @@ config.plugins.sivraj.agents.codex = common.merge({
 
 local function profiles() return config.plugins.sivraj.agents or {} end
 local function key(w, a) return w.path .. "\0" .. a.profile .. "\0" .. a.name end
-local function label(a) return (a.needs_input and "! " or "") .. a.profile .. ": " .. a.name end
+local function label(a) return (a.needs_input and "! " or "") .. a.name .. " [" .. a.profile .. "]" end
 local function agent_id(a) return (a.profile .. ":" .. a.name):gsub("%s+", "-") end
 local function icon(a)
   return function(_, active, hovered)
