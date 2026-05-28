@@ -5,6 +5,7 @@ local command = require "core.command"
 local common = require "core.common"
 local agents = require "plugins.sivraj.agents"
 local comments = require "plugins.sivraj.comments"
+local file_treeview = require "plugins.sivraj.file_treeview"
 local git = require "plugins.sivraj.git"
 local git_doc_view = require "plugins.sivraj.git_doc_view"
 local TreeView = require "libraries.generic_treeview"
@@ -311,5 +312,7 @@ if selected_info and selected_info.type == "dir" then
   end
   select_worktree_node(sidebar, selected_worktree)
 end
+
+file_treeview.setup()
 
 return sidebar

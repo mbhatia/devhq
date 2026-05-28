@@ -16,6 +16,11 @@ local function trim(text)
   return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
 
+local function git_path(path)
+  if PATHSEP == "/" then return path end
+  return (path:gsub("/", PATHSEP))
+end
+
 local function run(path, args, yielding)
   local command = { "git", "-C", path }
   for _, arg in ipairs(args) do
@@ -48,6 +53,80 @@ local function run(path, args, yielding)
   return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
 end
 
+local function split_lines(text)
+  local lines = {}
+  for line in (text or ""):gmatch("[^\r\n]+") do
+    lines[#lines + 1] = line
+  end
+  return lines
+end
+
+local function ensure_file(result, rel)
+  rel = git_path(rel)
+  local file = result.files[rel]
+  if not file then
+    file = { path = rel, code = "M" }
+    result.files[rel] = file
+  end
+  return file
+end
+
+local function mark_mode(result, mode, rel)
+  result.modes[mode][git_path(rel)] = true
+end
+
+local function parse_numstat(result, output, mode)
+  for _, line in ipairs(split_lines(output)) do
+    local added, deleted, rel = line:match("^(%S+)%s+(%S+)%s+(.+)$")
+    if rel then
+      rel = rel:match(".+ %-> (.+)$") or rel
+      local file = ensure_file(result, rel)
+      if mode then
+        file.stats = file.stats or {}
+        file.stats[mode] = {
+          added = added == "-" and nil or tonumber(added),
+          deleted = deleted == "-" and nil or tonumber(deleted),
+        }
+        mark_mode(result, mode, rel)
+      end
+    end
+  end
+end
+
+local function parse_status(result, output)
+  for _, line in ipairs(split_lines(output)) do
+    local xy, rel = line:sub(1, 2), line:sub(4)
+    if rel ~= "" and xy ~= "!!" then
+      rel = rel:match(".+ %-> (.+)$") or rel
+      local x, y = xy:sub(1, 1), xy:sub(2, 2)
+      local file = ensure_file(result, rel)
+      file.staged = x ~= " " and x ~= "?"
+      file.unstaged = y ~= " " or x == "?"
+      file.code = x == "?" and "A" or (file.staged and x or y)
+      if file.code == " " then file.code = "M" end
+      file.codes = file.codes or {}
+      file.codes.uncommitted = file.code
+      if file.staged then file.codes.staged = x end
+      mark_mode(result, "uncommitted", rel)
+      if file.staged then mark_mode(result, "staged", rel) end
+    end
+  end
+end
+
+local function parse_name_status(result, output, mode)
+  for _, line in ipairs(split_lines(output)) do
+    local status, rel = line:match("^(%S+)%s+(.+)$")
+    if rel then
+      local file = ensure_file(result, rel)
+      file.upstream = true
+      file.codes = file.codes or {}
+      file.codes[mode] = status:sub(1, 1)
+      file.code = file.code or file.codes[mode]
+      mark_mode(result, mode, rel)
+    end
+  end
+end
+
 local function rev_exists(path, ref, yielding)
   local _, code = run(path, { "rev-parse", "--verify", ref .. "^{commit}" }, yielding)
   return code == 0
@@ -60,6 +139,16 @@ local function merge_base(path, ref, yielding)
     if output ~= "" then
       return output
     end
+  end
+end
+
+local function upstream_base(path, yielding)
+  local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
+  if code ~= 0 or trim(output) == "" then return end
+  local ref = trim(output)
+  if rev_exists(path, ref, yielding) then
+    local base = merge_base(path, ref, yielding)
+    if base then return base, ref end
   end
 end
 
@@ -156,6 +245,40 @@ function M.commit_for_file(path, file, yielding)
     return "uncommitted"
   end
   return trim(output)
+end
+
+function M.tree_status(path, yielding)
+  local result = {
+    files = {},
+    modes = {
+      uncommitted = {},
+      staged = {},
+      head = {},
+    },
+  }
+
+  local output, code = run(path, { "status", "--porcelain=v1", "--untracked-files=all" }, yielding)
+  if code ~= 0 then
+    return nil, output
+  end
+  parse_status(result, output)
+
+  output, code = run(path, { "diff", "--numstat", "HEAD", "--" }, yielding)
+  if code == 0 then parse_numstat(result, output, "uncommitted") end
+
+  output, code = run(path, { "diff", "--cached", "--numstat", "--" }, yielding)
+  if code == 0 then parse_numstat(result, output, "staged") end
+
+  local parent, ref = upstream_base(path, yielding)
+  result.upstream_ref = ref
+  if parent then
+    output, code = run(path, { "diff", "--name-status", "--no-renames", parent, "HEAD", "--" }, yielding)
+    if code == 0 then parse_name_status(result, output, "head") end
+    output, code = run(path, { "diff", "--numstat", "--no-renames", parent, "HEAD", "--" }, yielding)
+    if code == 0 then parse_numstat(result, output, "head") end
+  end
+
+  return result
 end
 
 return M
