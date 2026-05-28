@@ -197,6 +197,13 @@ function M.worktrees(path)
   return list
 end
 
+function M.common_dir(path)
+  local output, code = run(path, { "rev-parse", "--path-format=absolute", "--git-common-dir" })
+  if code ~= 0 then return end
+  output = trim(output)
+  return output ~= "" and output or nil
+end
+
 function M.parent_commit(path, yielding)
   local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
   local candidates = {}

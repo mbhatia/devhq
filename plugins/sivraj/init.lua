@@ -3,6 +3,7 @@
 local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
+local dirwatch = require "core.dirwatch"
 local agents = require "plugins.sivraj.agents"
 local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
@@ -40,6 +41,7 @@ local function load_state()
 end
 
 local repos, expanded, selected_worktree = load_state()
+local worktree_watch = dirwatch.new()
 
 local function save_state()
   local fp = io.open(state_filename, "w")
@@ -51,7 +53,38 @@ local function save_state()
 end
 
 local function refresh_worktrees(repo)
+  local old = common.serialize(repo.worktrees or {})
   repo.worktrees = agents.merge_worktrees(repo.worktrees, git.worktrees(repo.path))
+  return old ~= common.serialize(repo.worktrees)
+end
+
+local function watch_repo_worktrees(repo)
+  local common_dir = git.common_dir(repo.path)
+  if not common_dir then return end
+  worktree_watch:watch(common_dir)
+  local worktrees_dir = common_dir .. PATHSEP .. "worktrees"
+  local info = system.get_file_info(worktrees_dir)
+  if info and info.type == "dir" then
+    worktree_watch:watch(worktrees_dir)
+  end
+end
+
+local function watch_all_repo_worktrees()
+  for _, repo in ipairs(repos) do
+    watch_repo_worktrees(repo)
+  end
+end
+
+local function refresh_all_worktrees()
+  local changed = false
+  watch_all_repo_worktrees()
+  for _, repo in ipairs(repos) do
+    changed = refresh_worktrees(repo) or changed
+  end
+  if changed then
+    save_state()
+    core.redraw = true
+  end
 end
 
 for _, repo in ipairs(repos) do
@@ -197,6 +230,7 @@ local function add_repo(path)
   if repo then
     refresh_worktrees(repo)
     save_state()
+    watch_repo_worktrees(repo)
   end
   view.visible = true
   core.redraw = true
@@ -211,6 +245,7 @@ local function add_scanned_repos(path)
     local repo = append_repo(repo_path)
     if repo then
       refresh_worktrees(repo)
+      watch_repo_worktrees(repo)
       added = added + 1
     end
   end
@@ -305,6 +340,16 @@ agents.setup({
 })
 
 local sidebar = ensure_sidebar()
+watch_all_repo_worktrees()
+core.add_thread(function()
+  while true do
+    local changed = worktree_watch:check(function()
+      refresh_all_worktrees()
+    end, 0.01, 0.01)
+    coroutine.yield(changed and 0 or 0.2)
+  end
+end)
+
 local selected_info = selected_worktree and system.get_file_info(selected_worktree)
 if selected_info and selected_info.type == "dir" then
   if core.project_dir ~= selected_worktree then
