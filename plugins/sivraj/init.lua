@@ -3,7 +3,6 @@
 local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
-local dirwatch = require "core.dirwatch"
 local agents = require "plugins.sivraj.agents"
 local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
@@ -41,7 +40,7 @@ local function load_state()
 end
 
 local repos, expanded, selected_worktree = load_state()
-local worktree_watch = dirwatch.new()
+local worktree_watch = {}
 
 local function save_state()
   local fp = io.open(state_filename, "w")
@@ -58,15 +57,66 @@ local function refresh_worktrees(repo)
   return old ~= common.serialize(repo.worktrees)
 end
 
-local function watch_repo_worktrees(repo)
-  local common_dir = git.common_dir(repo.path)
-  if not common_dir then return end
-  worktree_watch:watch(common_dir)
-  local worktrees_dir = common_dir .. PATHSEP .. "worktrees"
-  local info = system.get_file_info(worktrees_dir)
-  if info and info.type == "dir" then
-    worktree_watch:watch(worktrees_dir)
+local function add_watch_path(snapshot, path)
+  local info = system.get_file_info(path)
+  if info then
+    snapshot[path] = info.modified or 0
   end
+end
+
+local function repo_worktree_snapshot(common_dir)
+  local snapshot = {}
+  add_watch_path(snapshot, common_dir)
+  add_watch_path(snapshot, common_dir .. PATHSEP .. "HEAD")
+
+  local worktrees_dir = common_dir .. PATHSEP .. "worktrees"
+  add_watch_path(snapshot, worktrees_dir)
+
+  for _, name in ipairs(system.list_dir(worktrees_dir) or {}) do
+    local path = worktrees_dir .. PATHSEP .. name
+    local info = system.get_file_info(path)
+    if info and info.type == "dir" then
+      add_watch_path(snapshot, path)
+      add_watch_path(snapshot, path .. PATHSEP .. "HEAD")
+      add_watch_path(snapshot, path .. PATHSEP .. "gitdir")
+    end
+  end
+
+  return snapshot
+end
+
+local function snapshots_equal(a, b)
+  for path, value in pairs(a or {}) do
+    if not b or b[path] ~= value then return false end
+  end
+  for path in pairs(b or {}) do
+    if not a or a[path] == nil then return false end
+  end
+  return true
+end
+
+local function watch_repo_worktrees(repo)
+  local state = worktree_watch[repo.path]
+  if not state then
+    local common_dir = git.common_dir(repo.path)
+    if not common_dir then return end
+    state = { common_dir = common_dir }
+    worktree_watch[repo.path] = state
+  end
+  state.snapshot = repo_worktree_snapshot(state.common_dir)
+end
+
+local function repo_worktrees_changed(repo)
+  local state = worktree_watch[repo.path]
+  if not state then
+    watch_repo_worktrees(repo)
+    return false
+  end
+
+  local snapshot = repo_worktree_snapshot(state.common_dir)
+  local changed = not snapshots_equal(state.snapshot, snapshot)
+  state.snapshot = snapshot
+  return changed
 end
 
 local function watch_all_repo_worktrees()
@@ -77,9 +127,11 @@ end
 
 local function refresh_all_worktrees()
   local changed = false
-  watch_all_repo_worktrees()
   for _, repo in ipairs(repos) do
-    changed = refresh_worktrees(repo) or changed
+    if repo_worktrees_changed(repo) then
+      changed = refresh_worktrees(repo) or changed
+      watch_repo_worktrees(repo)
+    end
   end
   if changed then
     save_state()
@@ -343,10 +395,8 @@ local sidebar = ensure_sidebar()
 watch_all_repo_worktrees()
 core.add_thread(function()
   while true do
-    local changed = worktree_watch:check(function()
-      refresh_all_worktrees()
-    end, 0.01, 0.01)
-    coroutine.yield(changed and 0 or 0.2)
+    refresh_all_worktrees()
+    coroutine.yield(1)
   end
 end)
 
