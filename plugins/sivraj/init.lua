@@ -3,6 +3,9 @@
 local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
+local config = require "core.config"
+local context_menu = require "plugins.contextmenu"
+local MessageBox = require "libraries.widget.messagebox"
 local agents = require "plugins.sivraj.agents"
 local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
@@ -12,6 +15,10 @@ local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
 local state_filename = USERDIR .. PATHSEP .. "sivraj.lua"
+
+config.plugins.sivraj = common.merge({
+  worktree_root = ".worktrees",
+}, config.plugins.sivraj)
 
 local function find_sidebar()
   for _, loaded_view in ipairs(core.root_view.root_node:get_children()) do
@@ -164,6 +171,68 @@ local function select_worktree(path)
   end)
 end
 
+local function join_path(path, name)
+  if path:sub(-1) == PATHSEP then return path .. name end
+  return path .. PATHSEP .. name
+end
+
+local function trim(text)
+  return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function default_worktree_path(repo, branch)
+  local root = config.plugins.sivraj.worktree_root
+  if type(root) ~= "string" or root == "" then root = ".worktrees" end
+  root = common.home_expand(root)
+  if not common.is_absolute_path(root) then
+    root = join_path(repo.path, root)
+  end
+  return join_path(root, branch)
+end
+
+local function finish_worktree_change(repo)
+  refresh_worktrees(repo)
+  save_state()
+  watch_repo_worktrees(repo)
+  core.redraw = true
+end
+
+local function create_worktree(repo, branch)
+  branch = trim(branch)
+  if branch == "" then return core.error("Branch name is required") end
+
+  local path = default_worktree_path(repo, branch)
+  local parent = common.dirname(path)
+  if parent and not system.get_file_info(parent) then
+    local ok, err, failed = common.mkdirp(parent)
+    if not ok then return core.error("Could not create %s: %s", failed, err) end
+  end
+
+  local base = not git.branch_exists(repo.path, branch) and git.current_branch(repo.path) or nil
+  local ok, output = git.add_worktree(repo.path, path, branch, base)
+  if not ok then return core.error("Could not create worktree: %s", trim(output) ~= "" and trim(output) or "git failed") end
+  expanded[repo.path] = true
+  finish_worktree_change(repo)
+end
+
+local function prompt_create_worktree(repo)
+  if not repo then return core.error("Select a repo in the Sivraj sidebar") end
+  core.command_view:enter("Branch Name", {
+    submit = function(branch) create_worktree(repo, branch) end,
+  })
+end
+
+local function remove_worktree(repo, worktree)
+  local ok, output = git.remove_worktree(repo.path, worktree.path)
+  if not ok then
+    local message = trim(output)
+    MessageBox.error("Remove Worktree Failed", message ~= "" and message or "git worktree remove failed")
+    return
+  end
+  if selected_worktree == worktree.path then selected_worktree = nil end
+  finish_worktree_change(repo)
+end
+
 local function install_selection_handler(view)
   if view._sivraj_original_set_selection then
     view.set_selection = view._sivraj_original_set_selection
@@ -197,6 +266,8 @@ local function worktree_children(repo)
       path = worktree.path,
       label = worktree.branch,
       kind = "worktree",
+      repo = repo,
+      worktree = worktree,
       tooltip = worktree.path,
       can_expand = function() return #(worktree.agents or {}) > 0 end,
       open_on_expand = true,
@@ -221,6 +292,7 @@ local backend = {
         path = repo.path,
         label = common.basename(repo.path),
         kind = "repo",
+        repo = repo,
         tooltip = repo.path,
         is_expanded = function(node) return expanded[node.path] == true end,
         set_expanded = function(node, value)
@@ -233,6 +305,46 @@ local backend = {
     return roots
   end,
 }
+
+local context_item
+
+local function item_at(view, x, y)
+  for item, ix, iy, iw, ih in view:each_item() do
+    if x > ix and y > iy and x <= ix + iw and y <= iy + ih then
+      return item, iy
+    end
+  end
+end
+
+local function selected_repo()
+  local view = find_sidebar()
+  local item = view and view.selected_item
+  local node = item and item.node
+  if node and node.kind == "repo" then return node.repo end
+  if node and node.kind == "worktree" then return node.repo end
+  if #repos == 1 then return repos[1] end
+end
+
+local function context_node(kind)
+  return function(x, y)
+    local view = core.active_view
+    if not (view and view._sivraj_treeview) then return false end
+    local item, item_y = item_at(view, x, y)
+    local node = item and item.node
+    if not (node and node.kind == kind) then return false end
+    context_item = item
+    view:set_selection(item, item_y)
+    return true
+  end
+end
+
+context_menu:register(context_node("repo"), {
+  { text = "Create Worktree", command = "sivraj:create-worktree" },
+})
+
+context_menu:register(context_node("worktree"), {
+  { text = "Delete Worktree", command = "sivraj:delete-worktree" },
+})
 
 local function ensure_sidebar()
   local view = find_sidebar()
@@ -364,6 +476,20 @@ command.add(nil, {
         return true
       end,
     })
+  end,
+
+  ["sivraj:create-worktree"] = function()
+    prompt_create_worktree(selected_repo())
+  end,
+
+  ["sivraj:delete-worktree"] = function()
+    local view = find_sidebar()
+    local item = context_menu.show_context_menu and context_item or (view and view.selected_item)
+    local node = item and item.node
+    if not (node and node.kind == "worktree") then
+      return core.error("Select a worktree in the Sivraj sidebar")
+    end
+    remove_worktree(node.repo, node.worktree)
   end,
 
   ["sivraj:toggle-git-diff-overlay"] = function()

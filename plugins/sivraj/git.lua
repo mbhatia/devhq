@@ -204,6 +204,34 @@ function M.common_dir(path)
   return output ~= "" and output or nil
 end
 
+function M.current_branch(path)
+  local output, code = run(path, { "rev-parse", "--abbrev-ref", "HEAD" })
+  if code ~= 0 then return "HEAD" end
+  output = trim(output)
+  return output ~= "" and output or "HEAD"
+end
+
+function M.branch_exists(path, branch)
+  local _, code = run(path, { "show-ref", "--verify", "--quiet", "refs/heads/" .. branch })
+  return code == 0
+end
+
+function M.add_worktree(path, worktree_path, branch, base)
+  local args = { "worktree", "add" }
+  if base then
+    table.move({ "-b", branch, worktree_path, base }, 1, 4, #args + 1, args)
+  else
+    table.move({ worktree_path, branch }, 1, 2, #args + 1, args)
+  end
+  local output, code = run(path, args)
+  return code == 0, output
+end
+
+function M.remove_worktree(path, worktree_path)
+  local output, code = run(path, { "worktree", "remove", worktree_path })
+  return code == 0, output
+end
+
 function M.parent_commit(path, yielding)
   local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
   local candidates = {}
