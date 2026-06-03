@@ -11,6 +11,7 @@ local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
 local git = require "plugins.sivraj.git"
 local git_doc_view = require "plugins.sivraj.git_doc_view"
+local git_history_pane = require "plugins.sivraj.git_history_pane"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
@@ -587,6 +588,10 @@ command.add(nil, {
 
   ["sivraj:toggle-git-diff-overlay"] = function()
     git_doc_view.toggle()
+  end,
+
+  ["sivraj:toggle-git-history"] = function()
+    git_history_pane.toggle()
   end,
 })
 

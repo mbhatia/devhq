@@ -168,6 +168,53 @@ local function parse_name_status(result, output, mode)
   end
 end
 
+local function first_parent(commit)
+  return tostring(commit or "") .. "^"
+end
+
+local function normalize_diffstat_path(rel)
+  local prefix, new_name, suffix = rel:match("^(.-)%{.- => (.-)%}(.*)$")
+  if new_name then
+    return prefix .. new_name .. suffix
+  end
+  return rel:match(".+ %-> (.+)$") or rel:match(".+ => (.+)$") or rel
+end
+
+local function parse_commit_numstat(files, output)
+  for _, line in ipairs(split_lines(output)) do
+    local added, deleted, rel = line:match("^(%S+)%s+(%S+)%s+(.+)$")
+    if rel then
+      rel = normalize_diffstat_path(rel)
+      rel = git_path(rel)
+      local file = files[rel]
+      if file then
+        file.added = added == "-" and nil or tonumber(added)
+        file.deleted = deleted == "-" and nil or tonumber(deleted)
+      end
+    end
+  end
+end
+
+local function parse_commit_status(output)
+  local list, by_path = {}, {}
+  for _, line in ipairs(split_lines(output)) do
+    local status, rest = line:match("^(%S+)%s+(.+)$")
+    if status and rest then
+      local old_path, path = rest:match("^([^\t]+)\t(.+)$")
+      if not path then path = rest end
+      local item = {
+        path = git_path(path),
+        old_path = old_path and git_path(old_path) or nil,
+        status = status:sub(1, 1),
+        status_code = status,
+      }
+      list[#list + 1] = item
+      by_path[item.path] = item
+    end
+  end
+  return list, by_path
+end
+
 local function rev_exists(path, ref, yielding)
   local _, code = run(path, { "rev-parse", "--verify", ref .. "^{commit}" }, yielding)
   return code == 0
@@ -551,6 +598,70 @@ function M.diff_against_parent(path, file, yielding)
     return nil, output
   end
   return output, nil, { parent = parent, ref = ref, path = rel }
+end
+
+function M.branch_history(path, yielding)
+  local parent, ref = M.parent_commit(path, yielding)
+  if not parent then
+    return nil, "No upstream merge base found"
+  end
+  local output, code = run(path, {
+    "log", "--date=short", "--format=%H%x1f%h%x1f%ad%x1f%an%x1f%s", parent .. "..HEAD"
+  }, yielding)
+  if code ~= 0 then return nil, output end
+  local commits = {}
+  for _, line in ipairs(split_lines(output)) do
+    local hash, short_hash, date, author, subject = line:match("^([^\31]+)\31([^\31]+)\31([^\31]*)\31([^\31]*)\31(.*)$")
+    if hash then
+      commits[#commits + 1] = {
+        hash = hash,
+        short_hash = short_hash,
+        date = date,
+        author = author,
+        subject = subject,
+      }
+    end
+  end
+  return commits, nil, { parent = parent, ref = ref }
+end
+
+function M.commit_files(path, commit, yielding)
+  local output, code = run(path, {
+    "diff", "--name-status", "-M", "-C", first_parent(commit), commit, "--"
+  }, yielding)
+  if code ~= 0 then return nil, output end
+  local list, by_path = parse_commit_status(output)
+  output, code = run(path, {
+    "diff", "--numstat", "-M", "-C", first_parent(commit), commit, "--"
+  }, yielding)
+  if code == 0 then parse_commit_numstat(by_path, output) end
+  return list
+end
+
+function M.commit_file_content(path, commit, file, yielding)
+  local rel = type(file) == "table" and file.path or file
+  if not rel or rel == "" then return nil, "No file path" end
+  local output, code = run(path, { "show", tostring(commit) .. ":" .. rel }, yielding)
+  if code == 0 then return output end
+  if type(file) == "table" and file.status == "D" then
+    output, code = run(path, { "show", first_parent(commit) .. ":" .. (file.old_path or rel) }, yielding)
+    if code == 0 then return output end
+  end
+  return nil, output
+end
+
+function M.diff_for_commit_file(path, commit, file, yielding)
+  local rel = type(file) == "table" and file.path or file
+  if not rel or rel == "" then return nil, "No file path" end
+  local args = { "diff", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C",
+    first_parent(commit), commit, "--" }
+  if type(file) == "table" and file.old_path and file.old_path ~= rel then
+    args[#args + 1] = file.old_path
+  end
+  args[#args + 1] = rel
+  local output, code = run(path, args, yielding)
+  if code ~= 0 then return nil, output end
+  return output, nil, { parent = first_parent(commit), commit = commit, path = rel }
 end
 
 function M.commit_for_file(path, file, yielding)
