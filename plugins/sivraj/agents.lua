@@ -33,6 +33,7 @@ end
 local function node(v) return v and core.root_view.root_node:get_node_for_view(v) end
 local function save() if rt.ctx then rt.ctx.save_state() end core.redraw = true end
 local function set_title(v, a) if v then v.title = label(a) end end
+local function shell_quote(value) return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'" end
 
 local function parent_repo(w)
   if not rt.ctx then return end
@@ -56,6 +57,29 @@ end
 local function parent_repo_id(w)
   local r = parent_repo(w)
   return common.basename((r and r.path) or w.path)
+end
+
+local function agent_options(w, a, cmd)
+  local r = parent_repo(w)
+  if r and r.kind == "remote" then
+    local remote_path = w.remote_path or r.remote_path
+    local script = "cd " .. shell_quote(remote_path)
+      .. " && REPO=" .. shell_quote(remote_path)
+      .. " && REPO_ID=" .. shell_quote(parent_repo_id(w))
+      .. " && AGENT_ID=" .. shell_quote(agent_id(a))
+      .. " && export REPO REPO_ID AGENT_ID"
+      .. " && " .. cmd
+    return {
+      kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
+      command = { "ssh", r.server, "/bin/sh -lc " .. shell_quote(script) },
+      agent_close_on_exit = "clean_exit",
+    }
+  end
+  return {
+    kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
+    command = cmd, shell = true, agent_close_on_exit = "clean_exit",
+    env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
+  }
 end
 
 local function find_agent(k)
@@ -115,11 +139,7 @@ local function launch(w, a, action)
     local p = profiles()[a.profile]
     local cmd = p and (p[action] or p.start)
     if not cmd then return core.error("Unknown Sivraj agent profile: %s", a.profile) end
-    v = ghostty.open_tab {
-      kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-      command = cmd, shell = true, agent_close_on_exit = "clean_exit",
-      env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
-    }
+    v = ghostty.open_tab(agent_options(w, a, cmd))
     install_attention_clearer(v)
     v.sivraj_agent_key, rt.views[k] = k, v
   end
