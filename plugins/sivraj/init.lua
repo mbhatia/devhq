@@ -11,6 +11,7 @@ local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
 local git = require "plugins.sivraj.git"
 local git_doc_view = require "plugins.sivraj.git_doc_view"
+local tree_model = require "plugins.sivraj.tree_model"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
@@ -36,7 +37,13 @@ local function load_state()
 
   local loaded_repos = {}
   for _, repo in ipairs(state.repos) do
-    if type(repo) == "table" and type(repo.path) == "string" then
+    if type(repo) == "table" and repo.kind == "remote" and type(repo.server) == "string"
+      and type(repo.remote_path) == "string" then
+      repo.cache_path = repo.cache_path or git.remote_cache_path(repo.server, repo.remote_path)
+      repo.path = repo.cache_path
+      repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
+      loaded_repos[#loaded_repos + 1] = repo
+    elseif type(repo) == "table" and type(repo.path) == "string" then
       repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
       loaded_repos[#loaded_repos + 1] = repo
     end
@@ -59,6 +66,9 @@ local function save_state()
 end
 
 local function refresh_worktrees(repo)
+  if repo.kind == "remote" then
+    return false
+  end
   local old = common.serialize(repo.worktrees or {})
   repo.worktrees = agents.merge_worktrees(repo.worktrees, git.worktrees(repo.path))
   return old ~= common.serialize(repo.worktrees)
@@ -103,6 +113,7 @@ local function snapshots_equal(a, b)
 end
 
 local function watch_repo_worktrees(repo)
+  if repo.kind == "remote" and not system.get_file_info(repo.path) then return end
   local state = worktree_watch[repo.path]
   if not state then
     local common_dir = git.common_dir(repo.path)
@@ -176,6 +187,10 @@ local function join_path(path, name)
   return path .. PATHSEP .. name
 end
 
+local function repo_group_for_repo(repo)
+  return tree_model.repo_group_for_repo(repo)
+end
+
 local function trim(text)
   return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
 end
@@ -197,7 +212,28 @@ local function finish_worktree_change(repo)
   core.redraw = true
 end
 
+local function sync_remote_repo(repo)
+  if not repo or repo.kind ~= "remote" then return end
+  core.add_thread(function()
+    local ok, err = git.sync_remote_repo(repo, true)
+    if not ok then
+      repo.last_error = trim(err) ~= "" and trim(err) or "remote sync failed"
+      core.error("Could not sync remote repo %s:%s: %s", repo.server, repo.remote_path, repo.last_error)
+    end
+    save_state()
+    watch_repo_worktrees(repo)
+    core.redraw = true
+  end)
+end
+
+local function sync_all_remote_repos()
+  for _, repo in ipairs(repos) do
+    if repo.kind == "remote" then sync_remote_repo(repo) end
+  end
+end
+
 local function create_worktree(repo, branch)
+  if repo and repo.kind == "remote" then return core.error("Remote repos do not support local worktree creation") end
   branch = trim(branch)
   if branch == "" then return core.error("Branch name is required") end
 
@@ -211,18 +247,20 @@ local function create_worktree(repo, branch)
   local base = not git.branch_exists(repo.path, branch) and git.current_branch(repo.path) or nil
   local ok, output = git.add_worktree(repo.path, path, branch, base)
   if not ok then return core.error("Could not create worktree: %s", trim(output) ~= "" and trim(output) or "git failed") end
-  expanded[repo.path] = true
+  expanded[repo_group_for_repo(repo)] = true
   finish_worktree_change(repo)
 end
 
 local function prompt_create_worktree(repo)
   if not repo then return core.error("Select a repo in the Sivraj sidebar") end
+  if repo.kind == "remote" then return core.error("Remote repos do not support local worktree creation") end
   core.command_view:enter("Branch Name", {
     submit = function(branch) create_worktree(repo, branch) end,
   })
 end
 
 local function remove_worktree(repo, worktree)
+  if repo and repo.kind == "remote" then return core.error("Remote repos do not support local worktree deletion") end
   local ok, output = git.remove_worktree(repo.path, worktree.path)
   if not ok then
     local message = trim(output)
@@ -242,14 +280,14 @@ local function install_selection_handler(view)
 end
 
 local function worktree_id(repo, worktree)
-  return repo.path .. ":" .. worktree.path
+  return tree_model.worktree_id(repo, worktree)
 end
 
 local function select_worktree_node(view, path)
   for _, repo in ipairs(repos) do
     for _, worktree in ipairs(repo.worktrees or {}) do
       if worktree.path == path then
-        expanded[repo.path] = true
+        expanded[repo_group_for_repo(repo)] = true
         view:set_selection_to_id(worktree_id(repo, worktree), false, true, true)
         core.redraw = true
         return
@@ -258,51 +296,14 @@ local function select_worktree_node(view, path)
   end
 end
 
-local function worktree_children(repo)
-  local children = {}
-  for _, worktree in ipairs(repo.worktrees or {}) do
-    children[#children + 1] = {
-      id = worktree_id(repo, worktree),
-      path = worktree.path,
-      label = worktree.branch,
-      kind = "worktree",
-      repo = repo,
-      worktree = worktree,
-      tooltip = worktree.path,
-      can_expand = function() return #(worktree.agents or {}) > 0 end,
-      open_on_expand = true,
-      is_expanded = function(node) return expanded[node.id] == true end,
-      set_expanded = function(node, value)
-        expanded[node.id] = not not value
-        save_state()
-      end,
-      children = function() return agents.children(worktree) end,
-      open = function(node) select_worktree(node.path) end,
-    }
-  end
-  return children
-end
-
 local backend = {
   roots = function()
-    local roots = {}
-    for _, repo in ipairs(repos) do
-      roots[#roots + 1] = {
-        id = repo.path,
-        path = repo.path,
-        label = common.basename(repo.path),
-        kind = "repo",
-        repo = repo,
-        tooltip = repo.path,
-        is_expanded = function(node) return expanded[node.path] == true end,
-        set_expanded = function(node, value)
-          expanded[node.path] = not not value
-          save_state()
-        end,
-        children = function() return worktree_children(repo) end,
-      }
-    end
-    return roots
+    return tree_model.roots(repos, {
+      expanded = expanded,
+      save_state = save_state,
+      agent_children = agents.children,
+      select_worktree = select_worktree,
+    })
   end,
 }
 
@@ -379,11 +380,37 @@ local function has_repo(path)
   return false
 end
 
+local function has_remote_repo(server, remote_path)
+  for _, repo in ipairs(repos) do
+    if repo.kind == "remote" and repo.server == server and repo.remote_path == remote_path then
+      return true
+    end
+  end
+  return false
+end
+
 local function append_repo(path)
   if not has_repo(path) then
     local repo = { path = path, worktrees = {} }
     repos[#repos + 1] = repo
     expanded[path] = false
+    return repo
+  end
+end
+
+local function append_remote_repo(server, remote_path)
+  if not has_remote_repo(server, remote_path) then
+    local cache_path = git.remote_cache_path(server, remote_path)
+    local repo = {
+      kind = "remote",
+      server = server,
+      remote_path = remote_path,
+      cache_path = cache_path,
+      path = cache_path,
+      worktrees = {},
+    }
+    repos[#repos + 1] = repo
+    expanded[cache_path] = false
     return repo
   end
 end
@@ -395,6 +422,19 @@ local function add_repo(path)
     refresh_worktrees(repo)
     save_state()
     watch_repo_worktrees(repo)
+  end
+  view.visible = true
+  core.redraw = true
+end
+
+local function add_remote_repo(spec)
+  local server, remote_path = git.parse_remote_spec(spec)
+  if not server then return core.error("Remote repo must be formatted as server:/path/to/repo") end
+  local view = ensure_sidebar()
+  local repo = append_remote_repo(server, remote_path)
+  if repo then
+    save_state()
+    sync_remote_repo(repo)
   end
   view.visible = true
   core.redraw = true
@@ -478,6 +518,24 @@ command.add(nil, {
     })
   end,
 
+  ["sivraj:open-remote-repo"] = function()
+    core.command_view:enter("Open Remote Repo", {
+      submit = add_remote_repo,
+      validate = function(text)
+        local server, remote_path = git.parse_remote_spec(text)
+        if not server then
+          core.error("Remote repo must be formatted as server:/path/to/repo")
+          return false
+        end
+        return remote_path ~= ""
+      end,
+    })
+  end,
+
+  ["sivraj:sync-remote-repos"] = function()
+    sync_all_remote_repos()
+  end,
+
   ["sivraj:create-worktree"] = function()
     prompt_create_worktree(selected_repo())
   end,
@@ -488,6 +546,9 @@ command.add(nil, {
     local node = item and item.node
     if not (node and node.kind == "worktree") then
       return core.error("Select a worktree in the Sivraj sidebar")
+    end
+    if node.repo and node.repo.kind == "remote" then
+      return core.error("Remote repos do not support local worktree deletion")
     end
     remove_worktree(node.repo, node.worktree)
   end,

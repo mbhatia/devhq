@@ -29,6 +29,7 @@ Small git boundary. It shells out to `git` and exposes:
 - `is_repo(path)`
 - `scan_repos(path, found)`
 - `worktrees(path)`
+- `sync_remote_repo(repo)`
 
 `manifest.json`
 
@@ -48,11 +49,29 @@ Runtime state file written by the plugin. It stores:
 
 - `sivraj:toggle-sidebar`
 - `sivraj:open-repo`
+- `sivraj:open-remote-repo`
 - `sivraj:scan-all-repos`
+- `sivraj:sync-remote-repos`
 
 `open-repo` adds one git repository.
 
+`open-remote-repo` adds one remote git repository. Enter the remote as:
+
+```text
+server:/path/to/repo
+```
+
+Sivraj connects with `ssh`, reads remote worktree metadata with `/bin/sh`, and
+creates a shallow local mirror under `USERDIR/sivraj-remote-repos`. Remote
+worktree rows open the local mirrored worktree paths so Lite XL can render files
+and diffs locally.
+
+Remote uncommitted and staged files are not mirrored. The mirror represents
+commits and worktree branch checkouts only.
+
 `scan-all-repos` walks a directory and adds every git repository it finds.
+
+`sync-remote-repos` refreshes every configured remote repository mirror.
 
 Top-level repository rows only expand or collapse. Worktree rows change the
 active Lite XL project folder.

@@ -53,12 +53,53 @@ local function run(path, args, yielding)
   return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
 end
 
+local function run_command(command, cwd, yielding)
+  local proc = process.start(command, {
+    cwd = cwd,
+    stdout = process.REDIRECT_PIPE,
+    stderr = process.REDIRECT_STDOUT,
+  })
+  if not proc then
+    return "", -1
+  end
+
+  local chunks = {}
+  while true do
+    local chunk = proc:read_stdout()
+    if chunk == nil then break end
+    if chunk ~= "" then chunks[#chunks + 1] = chunk end
+    if yielding then coroutine.yield(0) end
+  end
+  return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
+end
+
 local function split_lines(text)
   local lines = {}
   for line in (text or ""):gmatch("[^\r\n]+") do
     lines[#lines + 1] = line
   end
   return lines
+end
+
+local function shell_quote(value)
+  return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'"
+end
+
+local function ssh_sh_command(server, script)
+  return { "ssh", tostring(server), "/bin/sh -lc " .. shell_quote(script) }
+end
+
+local function safe_cache_part(part)
+  if part == "." then return "_dot" end
+  if part == ".." then return "_dotdot" end
+  return (part:gsub(PATHSEP, "_"))
+end
+
+local function ensure_dir(path)
+  if system.get_file_info(path) then return true end
+  local ok, err, failed = common.mkdirp(path)
+  if ok then return true end
+  return false, string.format("Could not create %s: %s", failed or path, err or "unknown error")
 end
 
 local function ensure_file(result, rel)
@@ -142,6 +183,16 @@ local function merge_base(path, ref, yielding)
   end
 end
 
+local function merge_base_refs(path, left, right, yielding)
+  local output, code = run(path, { "merge-base", left, right }, yielding)
+  if code == 0 then
+    output = trim(output)
+    if output ~= "" then
+      return output
+    end
+  end
+end
+
 local function upstream_base(path, yielding)
   local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
   if code ~= 0 or trim(output) == "" then return end
@@ -195,6 +246,228 @@ function M.worktrees(path)
   end
 
   return list
+end
+
+function M.parse_worktree_porcelain(output)
+  local list, current = {}, nil
+  for line in tostring(output or ""):gmatch("[^\r\n]+") do
+    local worktree = line:match("^worktree (.+)$")
+    if worktree then
+      current = { path = worktree, branch = "HEAD" }
+      list[#list + 1] = current
+    elseif current then
+      local head = line:match("^HEAD (.+)$")
+      local branch = line:match("^branch refs/heads/(.+)$")
+      if head then
+        current.head = head
+      elseif branch then
+        current.branch = branch
+        current.branch_name = branch
+      elseif line == "detached" then
+        current.branch = "HEAD"
+        current.detached = true
+      elseif line == "bare" then
+        current.bare = true
+      elseif line:match("^prunable") then
+        current.prunable = true
+      end
+    end
+  end
+  return list
+end
+
+function M.parse_remote_spec(text)
+  local server, remote_path = tostring(text or ""):match("^%s*([^:%s]+):(.+)%s*$")
+  if not server or remote_path == "" then return end
+  return server, remote_path
+end
+
+function M.remote_cache_root()
+  return join_path(USERDIR, "sivraj-remote-repos")
+end
+
+function M.remote_cache_path(server, remote_path)
+  local path = join_path(M.remote_cache_root(), safe_cache_part(tostring(server or "repo")))
+  local any = false
+  for part in tostring(remote_path or ""):gmatch("[^/]+") do
+    if part ~= "" then
+      path = join_path(path, safe_cache_part(part))
+      any = true
+    end
+  end
+  if not any then path = join_path(path, "repo") end
+  return path
+end
+
+local function remote_source(repo)
+  return tostring(repo.server) .. ":" .. tostring(repo.remote_path)
+end
+
+local function remote_git(repo, args, yielding)
+  local script = "git -C " .. shell_quote(repo.remote_path)
+  for _, arg in ipairs(args) do script = script .. " " .. shell_quote(arg) end
+  return run_command(ssh_sh_command(repo.server, script), nil, yielding)
+end
+
+local function parse_remote_list(output)
+  local by_name, names = {}, {}
+  for _, line in ipairs(split_lines(output)) do
+    local name, url, kind = line:match("^(%S+)%s+(%S+)%s+%((%w+)%)")
+    if name and url and kind == "fetch" and not by_name[name] then
+      by_name[name] = url
+      names[#names + 1] = name
+    end
+  end
+  table.sort(names)
+  return names, by_name
+end
+
+local function parse_upstreams(output)
+  local upstreams = {}
+  for _, line in ipairs(split_lines(output)) do
+    local branch, upstream = line:match("^([^\t]+)\t(.+)$")
+    if branch and branch ~= "" and upstream and upstream ~= "" then upstreams[branch] = upstream end
+  end
+  return upstreams
+end
+
+function M.remote_mirror_checkout_commands(path, ref)
+  ref = ref or "HEAD"
+  return {
+    { "git", "-C", path, "clean", "-fd" },
+    { "git", "-C", path, "checkout", "-f", "--detach", ref },
+    { "git", "-C", path, "reset", "--hard", ref },
+    { "git", "-C", path, "clean", "-fd" },
+  }
+end
+
+function M.remote_mirror_worktree_add_args(path, ref)
+  return { "worktree", "add", "--detach", path, ref or "HEAD" }
+end
+
+local function remote_ref_parts(ref)
+  local remote, branch = tostring(ref or ""):match("^([^/]+)/(.+)$")
+  if remote and branch and remote ~= "" and branch ~= "" then
+    return remote, branch
+  end
+end
+
+local function fetch_ref_history(path, ref, mode, yielding)
+  local remote, branch = remote_ref_parts(ref)
+  if not remote then return true end
+  local args = { "fetch", mode, remote, branch }
+  local _, code = run(path, args, yielding)
+  return code == 0
+end
+
+local function ensure_merge_base(path, left, right, yielding)
+  if not left or left == "" or not right or right == "" then return true end
+  if merge_base_refs(path, left, right, yielding) then return true end
+  for _ = 1, 4 do
+    fetch_ref_history(path, left, "--deepen=50", yielding)
+    fetch_ref_history(path, right, "--deepen=50", yielding)
+    if merge_base_refs(path, left, right, yielding) then return true end
+  end
+  fetch_ref_history(path, left, "--unshallow", yielding)
+  fetch_ref_history(path, right, "--unshallow", yielding)
+  return merge_base_refs(path, left, right, yielding) ~= nil
+end
+
+local function worktree_ref(repo, wt)
+  if wt.branch_name and wt.branch_name ~= "" then return tostring(repo.server) .. "/" .. wt.branch_name end
+  return wt.head
+end
+
+local function local_worktree_path(repo, remote_path)
+  if tostring(remote_path) == tostring(repo.remote_path) then return repo.cache_path end
+  return M.remote_cache_path(repo.server, remote_path)
+end
+
+function M.sync_remote_repo(repo, yielding)
+  repo.kind = "remote"
+  repo.cache_path = repo.cache_path or M.remote_cache_path(repo.server, repo.remote_path)
+  repo.path = repo.cache_path
+  local ok, err = ensure_dir(common.dirname(repo.cache_path))
+  if not ok then return false, err end
+
+  if not system.get_file_info(join_path(repo.cache_path, ".git")) then
+    local output, code = run_command({ "git", "clone", "--depth=1", "--no-single-branch", "--no-checkout",
+      remote_source(repo), repo.cache_path }, common.dirname(repo.cache_path), yielding)
+    if code ~= 0 then return false, output end
+  end
+
+  local output, code = remote_git(repo, { "remote", "-v" }, yielding)
+  if code ~= 0 then return false, output end
+  local names, urls = parse_remote_list(output)
+  urls[tostring(repo.server)] = remote_source(repo)
+  names[#names + 1] = tostring(repo.server)
+  for _, name in ipairs(names) do
+    local url = urls[name]
+    if url then
+      output, code = run(repo.cache_path, { "remote", "set-url", name, url }, yielding)
+      if code ~= 0 then
+        output, code = run(repo.cache_path, { "remote", "add", name, url }, yielding)
+        if code ~= 0 then return false, output end
+      end
+      output, code = run(repo.cache_path, { "fetch", name }, yielding)
+      if code ~= 0 then return false, output end
+    end
+  end
+
+  output, code = remote_git(repo, { "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" }, yielding)
+  if code ~= 0 then return false, output end
+  local upstreams = parse_upstreams(output)
+  output, code = remote_git(repo, { "worktree", "list", "--porcelain" }, yielding)
+  if code ~= 0 then return false, output end
+
+  local mapped = {}
+  for _, wt in ipairs(M.parse_worktree_porcelain(output)) do
+    if wt.path and not wt.bare and not wt.prunable then
+      local remote_path = wt.path
+      local cache_path = local_worktree_path(repo, remote_path)
+      mapped[#mapped + 1] = {
+        path = cache_path,
+        cache_path = cache_path,
+        remote_path = remote_path,
+        branch = wt.branch,
+        branch_name = wt.branch_name,
+        head = wt.head,
+      }
+    end
+  end
+
+  local existing = {}
+  for _, wt in ipairs(M.worktrees(repo.cache_path)) do existing[wt.path] = true end
+  for _, wt in ipairs(mapped) do
+    local ref = worktree_ref(repo, wt)
+    if not ensure_merge_base(repo.cache_path, ref, upstreams[wt.branch_name], yielding) then
+      return false, "Could not fetch merge-base history for " .. tostring(ref) ..
+        " and " .. tostring(upstreams[wt.branch_name])
+    end
+    if wt.path == repo.cache_path then
+      for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
+        output, code = run_command(command, wt.path, yielding)
+        if code ~= 0 then return false, output end
+      end
+    elseif existing[wt.path] then
+      for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
+        output, code = run_command(command, wt.path, yielding)
+        if code ~= 0 then return false, output end
+      end
+    else
+      ok, err = ensure_dir(common.dirname(wt.path))
+      if not ok then return false, err end
+      output, code = run(repo.cache_path, M.remote_mirror_worktree_add_args(wt.path, ref), yielding)
+      if code ~= 0 then return false, output end
+    end
+  end
+
+  local agents_by_path = {}
+  for _, wt in ipairs(repo.worktrees or {}) do agents_by_path[wt.path] = wt.agents end
+  for _, wt in ipairs(mapped) do wt.agents = agents_by_path[wt.path] or {} end
+  repo.worktrees = mapped
+  repo.last_error = nil
+  return true
 end
 
 function M.common_dir(path)
