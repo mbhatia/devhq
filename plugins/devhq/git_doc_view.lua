@@ -123,6 +123,15 @@ local function enabled()
 end
 
 local function current_key(view)
+  local context = view.devhq_commit_diff
+  if context then
+    local file = view.doc and view.doc.abs_filename
+    local info = file and (system.get_file_info(file) or {}) or {}
+    local stamp = tostring(info.modified or "") .. ":" .. tostring(info.size or "")
+    return table.concat({ "commit", context.repo or "", context.commit or "",
+      context.file and context.file.path or "", file or "", stamp }, "\0"),
+      context.repo, context.file, nil, context
+  end
   local file = view.doc and view.doc.abs_filename
   local root = core.project_dir
   if not file or not root or not common.path_belongs_to(file, root) then
@@ -148,7 +157,7 @@ function M.refresh(view)
     clear(view)
     return
   end
-  local key, root, file, mode = current_key(view)
+  local key, root, file, mode, context = current_key(view)
   if not key then
     clear(view)
     return
@@ -163,7 +172,12 @@ function M.refresh(view)
   view.devhq_diff_token = token
 
   core.add_thread(function()
-    local raw = git.diff_against_parent(root, file, true, mode)
+    local raw
+    if context then
+      raw = git.diff_for_commit_file(root, context.commit, file, true)
+    else
+      raw = git.diff_against_parent(root, file, true, mode)
+    end
     if view.devhq_diff_token ~= token then
       return
     end
@@ -285,7 +299,9 @@ function M.toggle()
   config.plugins.devhq.git_diff_overlay = not enabled()
   for _, view in ipairs(core.root_view.root_node:get_children()) do
     if view.doc then
+      local context = view.devhq_commit_diff
       clear(view)
+      view.devhq_commit_diff = context
     end
   end
   core.redraw = true
