@@ -11,6 +11,7 @@ local comments = require "plugins.sivraj.comments"
 local file_treeview = require "plugins.sivraj.file_treeview"
 local git = require "plugins.sivraj.git"
 local git_doc_view = require "plugins.sivraj.git_doc_view"
+local ghostty = require "plugins.ghostty"
 local tree_model = require "plugins.sivraj.tree_model"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
@@ -193,6 +194,34 @@ end
 
 local function trim(text)
   return (text or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function shell_quote(value)
+  return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'"
+end
+
+local function remote_worktree_for_path(path)
+  for _, repo in ipairs(repos) do
+    if repo.kind == "remote" then
+      for _, worktree in ipairs(repo.worktrees or {}) do
+        if worktree.path == path then return repo, worktree end
+      end
+    end
+  end
+end
+
+local function open_ghostty_tab(options)
+  local repo, worktree = remote_worktree_for_path(core.project_dir)
+  if not repo then return ghostty.open_tab(options) end
+  options = common.merge(options or {}, {
+    title = "[" .. tostring(repo.server) .. "] " .. tostring(worktree.branch or "remote"),
+    cwd = worktree.path,
+    command = {
+      "ssh", "-At", repo.server,
+      "/bin/sh -c " .. shell_quote("cd " .. shell_quote(worktree.remote_path) .. " && exec ${SHELL:-/bin/sh} -l"),
+    },
+  })
+  return ghostty.open_tab(options)
 end
 
 local function default_worktree_path(repo, branch)
@@ -466,6 +495,8 @@ local function suggest_repo_path(text)
 end
 
 command.add(nil, {
+  ["ghostty:open-tab"] = open_ghostty_tab,
+
   ["sivraj:toggle-sidebar"] = function()
     local view = find_sidebar()
     if view then
