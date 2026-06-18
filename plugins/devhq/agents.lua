@@ -8,18 +8,18 @@ local style = require "core.style"
 local ghostty = require "plugins.ghostty"
 
 local M = {}
-local rt = core.sivraj_agents_runtime or { views = {} }
-core.sivraj_agents_runtime = rt
+local rt = core.devhq_agents_runtime or { views = {} }
+core.devhq_agents_runtime = rt
 
-config.plugins.sivraj = config.plugins.sivraj or {}
-config.plugins.sivraj.agents = config.plugins.sivraj.agents or {}
-config.plugins.sivraj.agents.codex = common.merge({
+config.plugins.devhq = config.plugins.devhq or {}
+config.plugins.devhq.agents = config.plugins.devhq.agents or {}
+config.plugins.devhq.agents.codex = common.merge({
   start = "codex --add-dir $REPO",
   resume = "codex --add-dir $REPO resume",
   icon = "@",
-}, config.plugins.sivraj.agents.codex)
+}, config.plugins.devhq.agents.codex)
 
-local function profiles() return config.plugins.sivraj.agents or {} end
+local function profiles() return config.plugins.devhq.agents or {} end
 local function key(w, a) return w.path .. "\0" .. a.profile .. "\0" .. a.name end
 local function label(a) return (a.needs_input and "! " or "") .. a.name .. " [" .. a.profile .. "]" end
 local function agent_id(a) return (a.profile .. ":" .. a.name):gsub("%s+", "-") end
@@ -102,7 +102,7 @@ local function find_agent(k)
 end
 
 local function clear_attention(v)
-  local _, a = find_agent(v and v.sivraj_agent_key or "")
+  local _, a = find_agent(v and v.devhq_agent_key or "")
   if a and a.needs_input then
     a.needs_input = false
     set_title(v, a)
@@ -111,8 +111,8 @@ local function clear_attention(v)
 end
 
 local function install_attention_clearer(v)
-  if not v or v.sivraj_attention_clearer then return end
-  v.sivraj_attention_clearer = true
+  if not v or v.devhq_attention_clearer then return end
+  v.devhq_attention_clearer = true
 
   local on_text_input = v.on_text_input
   function v:on_text_input(text)
@@ -146,10 +146,10 @@ local function launch(w, a, action)
   if not (v and v.terminal) then
     local p = profiles()[a.profile]
     local cmd = p and (p[action] or p.start)
-    if not cmd then return core.error("Unknown Sivraj agent profile: %s", a.profile) end
+    if not cmd then return core.error("Unknown DevHQ agent profile: %s", a.profile) end
     v = ghostty.open_tab(agent_options(w, a, cmd))
     install_attention_clearer(v)
-    v.sivraj_agent_key, rt.views[k] = k, v
+    v.devhq_agent_key, rt.views[k] = k, v
   end
   a.needs_input = false
   set_title(v, a)
@@ -254,7 +254,7 @@ end
 function M.setup(ctx)
   rt.ctx = ctx
   command.add(nil, {
-    ["sivraj:create-agent"] = function()
+    ["devhq:create-agent"] = function()
       core.command_view:enter("Agent Profile", {
         suggest = function(text) return common.fuzzy_match(profile_names(), text) end,
         validate = function(text) return profiles()[text] ~= nil end,
@@ -266,17 +266,17 @@ end
 
 if not rt.events_registered then
   local function mark(e)
-    local _, a = find_agent(e.view and e.view.sivraj_agent_key or "")
+    local _, a = find_agent(e.view and e.view.devhq_agent_key or "")
     if a then a.needs_input = true; set_title(e.view, a); save() end
   end
   ghostty.on("notification", mark)
   ghostty.on("bell", mark)
   ghostty.on("title-changed", function(e)
-    local _, a = find_agent(e.view and e.view.sivraj_agent_key or "")
+    local _, a = find_agent(e.view and e.view.devhq_agent_key or "")
     if a then set_title(e.view, a); core.redraw = true end
   end)
   ghostty.on("terminal-exited", function(e)
-    local k = e.view and e.view.sivraj_agent_key
+    local k = e.view and e.view.devhq_agent_key
     if k then
       local n = node(e.view)
       if n then n:close_view(core.root_view.root_node, e.view) else e.view:close() end

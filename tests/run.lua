@@ -43,7 +43,7 @@ local function assert_not_contains(list, value, message)
 end
 
 local function test_remote_mirror_uses_detached_checkout()
-  local git = require "plugins.sivraj.git"
+  local git = require "plugins.devhq.git"
   local commands = git.remote_mirror_checkout_commands("/cache/worktree", "dev226/develop")
   local checkout = commands[2]
 
@@ -54,7 +54,7 @@ local function test_remote_mirror_uses_detached_checkout()
 end
 
 local function test_remote_mirror_worktree_add_uses_detached_checkout()
-  local git = require "plugins.sivraj.git"
+  local git = require "plugins.devhq.git"
   local args = git.remote_mirror_worktree_add_args("/cache/worktree", "dev226/develop")
 
   assert_equal(args[1], "worktree", "worktree add command starts with worktree")
@@ -65,7 +65,7 @@ local function test_remote_mirror_worktree_add_uses_detached_checkout()
 end
 
 local function test_duplicate_local_remote_branch_grouping()
-  local tree_model = require "plugins.sivraj.tree_model"
+  local tree_model = require "plugins.devhq.tree_model"
   local repos = {
     {
       path = "/Users/manubhat/co/nextunnel",
@@ -77,10 +77,10 @@ local function test_duplicate_local_remote_branch_grouping()
       kind = "remote",
       server = "dev226",
       remote_path = "/co/nextunnel",
-      path = "/Users/manubhat/co/oss/sivraj/sivraj-remote-repos/dev226/co/nextunnel",
+      path = "/Users/manubhat/co/oss/devhq/devhq-remote-repos/dev226/co/nextunnel",
       worktrees = {
         {
-          path = "/Users/manubhat/co/oss/sivraj/sivraj-remote-repos/dev226/co/nextunnel",
+          path = "/Users/manubhat/co/oss/devhq/devhq-remote-repos/dev226/co/nextunnel",
           remote_path = "/co/nextunnel",
           branch = "develop",
           branch_name = "develop",

@@ -6,19 +6,19 @@ local config = require "core.config"
 local DocView = require "core.docview"
 local style = require "core.style"
 local renderer = require "renderer"
-local git = require "plugins.sivraj.git"
+local git = require "plugins.devhq.git"
 
 local M = {}
-core.sivraj_git_doc_view = M
+core.devhq_git_doc_view = M
 
-config.plugins.sivraj = config.plugins.sivraj or {}
-config.plugins.sivraj.git_diff_overlay = config.plugins.sivraj.git_diff_overlay ~= false
+config.plugins.devhq = config.plugins.devhq or {}
+config.plugins.devhq.git_diff_overlay = config.plugins.devhq.git_diff_overlay ~= false
 
-style.sivraj_diff_addition = style.sivraj_diff_addition or { common.color "#587c0c" }
-style.sivraj_diff_modification = style.sivraj_diff_modification or { common.color "#0c7d9d" }
-style.sivraj_diff_deletion = style.sivraj_diff_deletion or { common.color "#94151b" }
-style.sivraj_diff_marker_width = style.sivraj_diff_marker_width or math.max(3, SCALE or 1)
-style.sivraj_diff_marker_gap = style.sivraj_diff_marker_gap or style.padding.x
+style.devhq_diff_addition = style.devhq_diff_addition or { common.color "#587c0c" }
+style.devhq_diff_modification = style.devhq_diff_modification or { common.color "#0c7d9d" }
+style.devhq_diff_deletion = style.devhq_diff_deletion or { common.color "#94151b" }
+style.devhq_diff_marker_width = style.devhq_diff_marker_width or math.max(3, SCALE or 1)
+style.devhq_diff_marker_gap = style.devhq_diff_marker_gap or style.padding.x
 
 local function split_lines(text)
   local lines = {}
@@ -44,9 +44,9 @@ local function parse_hunk_header(line)
 end
 
 local function color_for_kind(kind)
-  if kind == "addition" then return style.sivraj_diff_addition end
-  if kind == "modification" then return style.sivraj_diff_modification end
-  return style.sivraj_diff_deletion
+  if kind == "addition" then return style.devhq_diff_addition end
+  if kind == "modification" then return style.devhq_diff_modification end
+  return style.devhq_diff_deletion
 end
 
 local function add_annotation(annotations, line, kind, hunk, line_count)
@@ -118,7 +118,7 @@ local function build_annotations(raw, line_count)
 end
 
 local function enabled()
-  return config.plugins.sivraj.git_diff_overlay ~= false
+  return config.plugins.devhq.git_diff_overlay ~= false
 end
 
 local function current_key(view)
@@ -133,12 +133,12 @@ local function current_key(view)
 end
 
 local function clear(view)
-  view.sivraj_diff_annotations = nil
-  view.sivraj_diff_hunks = nil
-  view.sivraj_diff_overlay = nil
-  view.sivraj_diff_key = nil
-  view.sivraj_diff_pending = false
-  view.sivraj_diff_token = nil
+  view.devhq_diff_annotations = nil
+  view.devhq_diff_hunks = nil
+  view.devhq_diff_overlay = nil
+  view.devhq_diff_key = nil
+  view.devhq_diff_pending = false
+  view.devhq_diff_token = nil
 end
 
 function M.refresh(view)
@@ -151,47 +151,47 @@ function M.refresh(view)
     clear(view)
     return
   end
-  if view.sivraj_diff_pending or view.sivraj_diff_key == key then
+  if view.devhq_diff_pending or view.devhq_diff_key == key then
     return
   end
 
-  view.sivraj_diff_pending = true
-  view.sivraj_diff_key = key
+  view.devhq_diff_pending = true
+  view.devhq_diff_key = key
   local token = {}
-  view.sivraj_diff_token = token
+  view.devhq_diff_token = token
 
   core.add_thread(function()
     local raw = git.diff_against_parent(root, file, true)
-    if view.sivraj_diff_token ~= token then
+    if view.devhq_diff_token ~= token then
       return
     end
     if current_key(view) ~= key then
-      view.sivraj_diff_pending = false
+      view.devhq_diff_pending = false
       return
     end
-    view.sivraj_diff_pending = false
+    view.devhq_diff_pending = false
     if raw then
-      view.sivraj_diff_annotations, view.sivraj_diff_hunks = build_annotations(raw, view.doc and #view.doc.lines or 1)
-      if view.sivraj_diff_overlay and not view.sivraj_diff_annotations[view.sivraj_diff_overlay.line] then
-        view.sivraj_diff_overlay = nil
+      view.devhq_diff_annotations, view.devhq_diff_hunks = build_annotations(raw, view.doc and #view.doc.lines or 1)
+      if view.devhq_diff_overlay and not view.devhq_diff_annotations[view.devhq_diff_overlay.line] then
+        view.devhq_diff_overlay = nil
       end
     else
-      view.sivraj_diff_annotations, view.sivraj_diff_hunks, view.sivraj_diff_overlay = nil, nil, nil
+      view.devhq_diff_annotations, view.devhq_diff_hunks, view.devhq_diff_overlay = nil, nil, nil
     end
     core.redraw = true
   end)
 end
 
 function M.marker_rect(view, line_y)
-  local base_gw = DocView._sivraj_diff_originals.get_gutter_width(view)
-  local marker_w = style.sivraj_diff_marker_width
+  local base_gw = DocView._devhq_diff_originals.get_gutter_width(view)
+  local marker_w = style.devhq_diff_marker_width
   local hit_pad = math.floor(style.padding.x / 2)
-  local x = view.position.x + base_gw + style.sivraj_diff_marker_gap
+  local x = view.position.x + base_gw + style.devhq_diff_marker_gap
   return { x = x, y = line_y, w = marker_w, h = view:get_line_height(), hit_x = x - hit_pad, hit_w = marker_w + hit_pad * 2 }
 end
 
 function M.marker_at(view, x, y)
-  if not enabled() or not view.sivraj_diff_annotations or not next(view.sivraj_diff_annotations) then
+  if not enabled() or not view.devhq_diff_annotations or not next(view.devhq_diff_annotations) then
     return nil
   end
   local line = view:resolve_screen_position(x, y)
@@ -200,11 +200,11 @@ function M.marker_at(view, x, y)
   if x < marker.hit_x or x > marker.hit_x + marker.hit_w then
     return nil
   end
-  return line, view.sivraj_diff_annotations[line]
+  return line, view.devhq_diff_annotations[line]
 end
 
 function M.overlay_layout(view)
-  local overlay = view.sivraj_diff_overlay
+  local overlay = view.devhq_diff_overlay
   if not overlay or not overlay.hunk then return nil end
 
   local font = style.code_font or style.font
@@ -242,7 +242,7 @@ function M.point_in_overlay(view, x, y)
 end
 
 function M.draw_overlay(view)
-  local overlay = view.sivraj_diff_overlay
+  local overlay = view.devhq_diff_overlay
   if not overlay then return end
   local layout = M.overlay_layout(view)
   if not layout then return end
@@ -258,9 +258,9 @@ function M.draw_overlay(view)
     if not line then break end
     local color = style.text
     if line:sub(1, 1) == "+" and not line:match("^%+%+%+") then
-      color = style.sivraj_diff_addition
+      color = style.devhq_diff_addition
     elseif line:sub(1, 1) == "-" and not line:match("^%-{3}") then
-      color = style.sivraj_diff_deletion
+      color = style.devhq_diff_deletion
     elseif line:match("^@@") then
       color = style.accent
     elseif line:match("^diff ") or line:match("^index ") or line:match("^%-%-%- ") or line:match("^%+%+%+ ") then
@@ -280,7 +280,7 @@ function M.draw_overlay(view)
 end
 
 function M.toggle()
-  config.plugins.sivraj.git_diff_overlay = not enabled()
+  config.plugins.devhq.git_diff_overlay = not enabled()
   for _, view in ipairs(core.root_view.root_node:get_children()) do
     if view.doc then
       clear(view)
@@ -290,7 +290,7 @@ function M.toggle()
 end
 
 function M.setup()
-  if DocView._sivraj_diff_originals then return end
+  if DocView._devhq_diff_originals then return end
   local originals = {
     update = DocView.update,
     get_gutter_width = DocView.get_gutter_width,
@@ -300,17 +300,17 @@ function M.setup()
     on_mouse_wheel = DocView.on_mouse_wheel,
     draw_overlay = DocView.draw_overlay,
   }
-  DocView._sivraj_diff_originals = originals
+  DocView._devhq_diff_originals = originals
 
   function DocView:update(...)
-    core.sivraj_git_doc_view.refresh(self)
+    core.devhq_git_doc_view.refresh(self)
     return originals.update(self, ...)
   end
 
   function DocView:get_gutter_width()
     local gw, gpad = originals.get_gutter_width(self)
-    if enabled() and self.sivraj_diff_annotations and next(self.sivraj_diff_annotations) then
-      return gw + style.sivraj_diff_marker_gap + style.sivraj_diff_marker_width + style.padding.x, gpad
+    if enabled() and self.devhq_diff_annotations and next(self.devhq_diff_annotations) then
+      return gw + style.devhq_diff_marker_gap + style.devhq_diff_marker_width + style.padding.x, gpad
     end
     return gw, gpad
   end
@@ -318,9 +318,9 @@ function M.setup()
   function DocView:draw_line_gutter(line, x, y, width)
     local base_gw, base_gpad = originals.get_gutter_width(self)
     local lh = originals.draw_line_gutter(self, line, x, y, base_gpad and base_gw - base_gpad or base_gw)
-    local annotation = enabled() and self.sivraj_diff_annotations and self.sivraj_diff_annotations[line]
+    local annotation = enabled() and self.devhq_diff_annotations and self.devhq_diff_annotations[line]
     if annotation then
-      local marker = core.sivraj_git_doc_view.marker_rect(self, y)
+      local marker = core.devhq_git_doc_view.marker_rect(self, y)
       if annotation.kind == "deletion" then
         renderer.draw_rect(marker.x - marker.w, y + math.floor((lh or self:get_line_height()) / 2), marker.w * 2, math.max(2, SCALE or 1), color_for_kind(annotation.kind))
       else
@@ -332,13 +332,13 @@ function M.setup()
 
   function DocView:on_mouse_pressed(button, x, y, clicks)
     if button == "left" then
-      local line, annotation = core.sivraj_git_doc_view.marker_at(self, x, y)
+      local line, annotation = core.devhq_git_doc_view.marker_at(self, x, y)
       if annotation then
-        self.sivraj_diff_overlay = { line = line, hunk = annotation.hunk, kind = annotation.kind, scroll = 0 }
+        self.devhq_diff_overlay = { line = line, hunk = annotation.hunk, kind = annotation.kind, scroll = 0 }
         core.redraw = true
         return true
-      elseif self.sivraj_diff_overlay then
-        self.sivraj_diff_overlay = nil
+      elseif self.devhq_diff_overlay then
+        self.devhq_diff_overlay = nil
         core.redraw = true
       end
     end
@@ -347,16 +347,16 @@ function M.setup()
 
   function DocView:on_mouse_moved(x, y, ...)
     originals.on_mouse_moved(self, x, y, ...)
-    if select(2, core.sivraj_git_doc_view.marker_at(self, x, y)) then
+    if select(2, core.devhq_git_doc_view.marker_at(self, x, y)) then
       self.cursor = "hand"
     end
   end
 
   function DocView:on_mouse_wheel(y, x)
     local mouse = core.root_view and core.root_view.mouse
-    local layout = mouse and core.sivraj_git_doc_view.point_in_overlay(self, mouse.x, mouse.y)
+    local layout = mouse and core.devhq_git_doc_view.point_in_overlay(self, mouse.x, mouse.y)
     if layout and layout.max_scroll > 0 then
-      self.sivraj_diff_overlay.scroll = common.clamp(math.floor((self.sivraj_diff_overlay.scroll or 0) - y + 0.5), 0, layout.max_scroll)
+      self.devhq_diff_overlay.scroll = common.clamp(math.floor((self.devhq_diff_overlay.scroll or 0) - y + 0.5), 0, layout.max_scroll)
       core.redraw = true
       return true
     end
@@ -365,7 +365,7 @@ function M.setup()
 
   function DocView:draw_overlay(...)
     originals.draw_overlay(self, ...)
-    core.sivraj_git_doc_view.draw_overlay(self)
+    core.devhq_git_doc_view.draw_overlay(self)
   end
 end
 

@@ -283,7 +283,7 @@ function M.parse_remote_spec(text)
 end
 
 function M.remote_cache_root()
-  return join_path(USERDIR, "sivraj-remote-repos")
+  return join_path(USERDIR, "devhq-remote-repos")
 end
 
 function M.remote_cache_path(server, remote_path)

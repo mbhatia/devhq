@@ -7,21 +7,21 @@ local keymap = require "core.keymap"
 local style = require "core.style"
 local DocView = require "core.docview"
 local renderer = require "renderer"
-local git = require "plugins.sivraj.git"
-local agents = require "plugins.sivraj.agents"
+local git = require "plugins.devhq.git"
+local agents = require "plugins.devhq.agents"
 
 local M = {}
-core.sivraj_comments = M
+core.devhq_comments = M
 
 local comments, loaded_worktree, state_file = {}, nil, nil
 local normalize_thread
 
-style.sivraj_comments = common.merge({
+style.devhq_comments = common.merge({
   marker = style.warn or { common.color "#d79921" },
   resolved_marker = style.dim,
   marker_width = math.max(4, SCALE or 1),
   marker_gap = style.padding.x,
-}, style.sivraj_comments)
+}, style.devhq_comments)
 
 local function escape_json(value)
   return '"' .. tostring(value or ""):gsub('[%z\1-\31\\"]', function(ch)
@@ -136,7 +136,7 @@ local function workspace_dir()
 end
 
 local function basename_pattern(path)
-  return "^" .. common.basename(path):gsub("([^%w])", "%%%1") .. "%-sivraj%-comments%-(%d+)%.jsonl$"
+  return "^" .. common.basename(path):gsub("([^%w])", "%%%1") .. "%-devhq%-comments%-(%d+)%.jsonl$"
 end
 
 local function metadata_for(filename)
@@ -163,7 +163,7 @@ local function comments_file_for(path)
 
   local id = 1
   while used[id] do id = id + 1 end
-  return dir .. PATHSEP .. common.basename(path) .. "-sivraj-comments-" .. tostring(id) .. ".jsonl"
+  return dir .. PATHSEP .. common.basename(path) .. "-devhq-comments-" .. tostring(id) .. ".jsonl"
 end
 
 local function load(path)
@@ -273,7 +273,7 @@ local function author_label(author)
 end
 
 local function marker_color(item)
-  return item.state == "resolved" and style.sivraj_comments.resolved_marker or style.sivraj_comments.marker
+  return item.state == "resolved" and style.devhq_comments.resolved_marker or style.devhq_comments.marker
 end
 
 local function worktree()
@@ -324,10 +324,10 @@ local function remove_comment(id)
 end
 
 local function marker_rect(view, line_y)
-  local base_gw = DocView._sivraj_comments_originals.get_gutter_width(view)
-  local marker_w = style.sivraj_comments.marker_width
+  local base_gw = DocView._devhq_comments_originals.get_gutter_width(view)
+  local marker_w = style.devhq_comments.marker_width
   local hit_pad = math.floor(style.padding.x / 2)
-  local x = view.position.x + base_gw + style.sivraj_comments.marker_gap
+  local x = view.position.x + base_gw + style.devhq_comments.marker_gap
   return { x = x, y = line_y, w = marker_w, h = view:get_line_height(), hit_x = x - hit_pad, hit_w = marker_w + hit_pad * 2 }
 end
 
@@ -351,7 +351,7 @@ local function overlay_lines(item)
 end
 
 local function overlay_layout(view)
-  local overlay = view.sivraj_comment_overlay
+  local overlay = view.devhq_comment_overlay
   local item = overlay and find_comment(overlay.id)
   if not item then return nil end
   local font = style.font
@@ -369,17 +369,17 @@ local function overlay_layout(view)
 end
 
 local function close_overlay(view, cancel)
-  local overlay = view.sivraj_comment_overlay
+  local overlay = view.devhq_comment_overlay
   if cancel and overlay and overlay.created and (overlay.input or "") == "" then
     remove_comment(overlay.id)
   end
-  view.sivraj_comment_overlay = nil
-  view.sivraj_comment_hitboxes = nil
+  view.devhq_comment_overlay = nil
+  view.devhq_comment_hitboxes = nil
   core.redraw = true
 end
 
 local function commit_overlay(view)
-  local overlay = view.sivraj_comment_overlay
+  local overlay = view.devhq_comment_overlay
   local item = overlay and find_comment(overlay.id)
   if not item then return end
   local text = overlay.input or ""
@@ -397,7 +397,7 @@ local function commit_overlay(view)
 end
 
 local function resolve_overlay(view)
-  local item = view.sivraj_comment_overlay and find_comment(view.sivraj_comment_overlay.id)
+  local item = view.devhq_comment_overlay and find_comment(view.devhq_comment_overlay.id)
   if item then
     resolve_thread(item)
     save()
@@ -406,7 +406,7 @@ local function resolve_overlay(view)
 end
 
 local function open_overlay(view, item, created)
-  view.sivraj_comment_overlay = {
+  view.devhq_comment_overlay = {
     id = item.id,
     line = item.range["end"].line,
     col = item.range["end"].col,
@@ -438,9 +438,9 @@ function M.draw_overlay(view)
 
   local input_y = y + math.floor(layout.pad / 2)
   renderer.draw_rect(layout.x + layout.pad, input_y, layout.w - layout.pad * 2, layout.line_h, style.background3 or style.line_highlight)
-  renderer.draw_text(layout.font, view.sivraj_comment_overlay.input or "",
+  renderer.draw_text(layout.font, view.devhq_comment_overlay.input or "",
     layout.x + layout.pad * 1.5, input_y + math.floor((layout.line_h - layout.font:get_height()) / 2), style.text)
-  local caret_x = layout.x + layout.pad * 1.5 + layout.font:get_width(view.sivraj_comment_overlay.input or "")
+  local caret_x = layout.x + layout.pad * 1.5 + layout.font:get_width(view.devhq_comment_overlay.input or "")
   renderer.draw_rect(caret_x, input_y + 2, math.max(1, SCALE or 1), layout.line_h - 4, style.caret)
 
   local boxes, button_y = {}, input_y + layout.line_h + math.floor(layout.pad / 2)
@@ -448,7 +448,7 @@ function M.draw_overlay(view)
   x = draw_button(view, boxes, "save", layout.item.state == "draft" and "Save" or "Reply", x, button_y, layout.line_h)
   if layout.item.state == "open" then x = draw_button(view, boxes, "resolve", "Resolve", x, button_y, layout.line_h) end
   draw_button(view, boxes, "cancel", "Cancel", x, button_y, layout.line_h)
-  view.sivraj_comment_hitboxes = boxes
+  view.devhq_comment_hitboxes = boxes
 end
 
 function M.add_comment()
@@ -556,31 +556,31 @@ end
 function M.setup()
   ensure_loaded()
   command.add(nil, {
-    ["sivraj:add-comment"] = M.add_comment,
-    ["sivraj:resolve-comment"] = M.resolve_comment,
-    ["sivraj:post-all-comments"] = M.post_all_comments,
+    ["devhq:add-comment"] = M.add_comment,
+    ["devhq:resolve-comment"] = M.resolve_comment,
+    ["devhq:post-all-comments"] = M.post_all_comments,
   })
   command.add(function()
     local view = core.active_view
-    return view and view.sivraj_comment_overlay ~= nil, view
+    return view and view.devhq_comment_overlay ~= nil, view
   end, {
-    ["sivraj:comment-save"] = commit_overlay,
-    ["sivraj:comment-cancel"] = function(view) close_overlay(view, true) end,
-    ["sivraj:comment-backspace"] = function(view)
-      local overlay = view.sivraj_comment_overlay
+    ["devhq:comment-save"] = commit_overlay,
+    ["devhq:comment-cancel"] = function(view) close_overlay(view, true) end,
+    ["devhq:comment-backspace"] = function(view)
+      local overlay = view.devhq_comment_overlay
       if overlay then overlay.input = (overlay.input or ""):sub(1, -2); core.redraw = true end
     end,
-    ["sivraj:comment-resolve"] = resolve_overlay,
+    ["devhq:comment-resolve"] = resolve_overlay,
   })
   keymap.add {
-    ["return"] = "sivraj:comment-save",
-    ["keypad enter"] = "sivraj:comment-save",
-    ["escape"] = "sivraj:comment-cancel",
-    ["backspace"] = "sivraj:comment-backspace",
-    ["ctrl+r"] = "sivraj:comment-resolve",
+    ["return"] = "devhq:comment-save",
+    ["keypad enter"] = "devhq:comment-save",
+    ["escape"] = "devhq:comment-cancel",
+    ["backspace"] = "devhq:comment-backspace",
+    ["ctrl+r"] = "devhq:comment-resolve",
   }
 
-  if DocView._sivraj_comments_originals then return end
+  if DocView._devhq_comments_originals then return end
   local originals = {
     get_gutter_width = DocView.get_gutter_width,
     draw_line_gutter = DocView.draw_line_gutter,
@@ -588,12 +588,12 @@ function M.setup()
     on_text_input = DocView.on_text_input,
     draw_overlay = DocView.draw_overlay,
   }
-  DocView._sivraj_comments_originals = originals
+  DocView._devhq_comments_originals = originals
 
   function DocView:get_gutter_width()
     local gw, gpad = originals.get_gutter_width(self)
     if #active_comments_for_view(self) > 0 then
-      return gw + style.sivraj_comments.marker_gap + style.sivraj_comments.marker_width + style.padding.x, gpad
+      return gw + style.devhq_comments.marker_gap + style.devhq_comments.marker_width + style.padding.x, gpad
     end
     return gw, gpad
   end
@@ -612,8 +612,8 @@ function M.setup()
   end
 
   function DocView:on_mouse_pressed(button, x, y, clicks)
-    if button == "left" and self.sivraj_comment_hitboxes then
-      for _, box in ipairs(self.sivraj_comment_hitboxes) do
+    if button == "left" and self.devhq_comment_hitboxes then
+      for _, box in ipairs(self.devhq_comment_hitboxes) do
         if x >= box.x and x <= box.x + box.w and y >= box.y and y <= box.y + box.h then
           if box.action == "save" then commit_overlay(self)
           elseif box.action == "resolve" then resolve_overlay(self)
@@ -630,7 +630,7 @@ function M.setup()
   end
 
   function DocView:on_text_input(text)
-    local overlay = self.sivraj_comment_overlay
+    local overlay = self.devhq_comment_overlay
     if overlay then
       overlay.input = (overlay.input or "") .. text:gsub("[\r\n]", " ")
       core.redraw = true
@@ -641,7 +641,7 @@ function M.setup()
 
   function DocView:draw_overlay(...)
     originals.draw_overlay(self, ...)
-    core.sivraj_comments.draw_overlay(self)
+    core.devhq_comments.draw_overlay(self)
   end
 end
 

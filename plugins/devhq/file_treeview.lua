@@ -9,7 +9,7 @@ local DocView = require "core.docview"
 local EmptyView = require "core.emptyview"
 local Node = require "core.node"
 local RootView = require "core.rootview"
-local git = require "plugins.sivraj.git"
+local git = require "plugins.devhq.git"
 local default_treeview = require "plugins.treeview"
 
 local M = {}
@@ -139,7 +139,7 @@ local function draw_toolbar(view)
   renderer.draw_rect(view.position.x, view.position.y, view.size.x, toolbar_height(), style.background2)
   for item, x, y, w, h in each_toolbar_item(view) do
     local active = project_tree.mode == item.mode
-    local hovered = view._sivraj_filter_hovered_item == item
+    local hovered = view._devhq_filter_hovered_item == item
     if active then
       renderer.draw_rect(x, y, w, h, style.line_highlight)
     elseif hovered then
@@ -156,8 +156,8 @@ local function get_view_node(view)
 end
 
 local function promote_ephemeral(view)
-  if not (view and view._sivraj_ephemeral) then return end
-  view._sivraj_ephemeral = nil
+  if not (view and view._devhq_ephemeral) then return end
+  view._devhq_ephemeral = nil
   if ephemeral_view == view then ephemeral_view = nil end
   core.redraw = true
 end
@@ -174,7 +174,7 @@ local function close_ephemeral(except_doc)
     return
   end
   ephemeral_view = nil
-  view._sivraj_ephemeral = nil
+  view._devhq_ephemeral = nil
   if #node.views > 1 then
     local idx = node:get_view_idx(view)
     if idx then
@@ -193,7 +193,7 @@ end
 
 local function has_persistent_view(doc)
   for _, view in ipairs(core.get_views_referencing_doc(doc)) do
-    if not view._sivraj_ephemeral then return true end
+    if not view._devhq_ephemeral then return true end
   end
 end
 
@@ -211,12 +211,12 @@ local function replace_ephemeral(doc, ephemeral)
   node:set_active_view(view)
   view:scroll_to_line(view.doc:get_selection(), true, true)
   if ephemeral then
-    view._sivraj_ephemeral = true
+    view._devhq_ephemeral = true
     ephemeral_view = view
   else
     ephemeral_view = nil
   end
-  old_view._sivraj_ephemeral = nil
+  old_view._devhq_ephemeral = nil
   core.root_view.root_node:update_layout()
   core.redraw = true
   return view
@@ -265,7 +265,7 @@ local function open_file_item(item, ephemeral)
   end
   local view = core.root_view:open_doc(doc)
   if ephemeral and not persistent then
-    view._sivraj_ephemeral = true
+    view._devhq_ephemeral = true
     ephemeral_view = view
   else
     promote_ephemeral(view)
@@ -274,18 +274,18 @@ local function open_file_item(item, ephemeral)
 end
 
 local function italic_font(font)
-  if not style._sivraj_ephemeral_font
-      or style._sivraj_ephemeral_font_base ~= font
-      or style._sivraj_ephemeral_font_size ~= font:get_size() then
-    style._sivraj_ephemeral_font = font:copy(font:get_size(), { italic = true })
-    style._sivraj_ephemeral_font_base = font
-    style._sivraj_ephemeral_font_size = font:get_size()
+  if not style._devhq_ephemeral_font
+      or style._devhq_ephemeral_font_base ~= font
+      or style._devhq_ephemeral_font_size ~= font:get_size() then
+    style._devhq_ephemeral_font = font:copy(font:get_size(), { italic = true })
+    style._devhq_ephemeral_font_base = font
+    style._devhq_ephemeral_font_size = font:get_size()
   end
-  return style._sivraj_ephemeral_font
+  return style._devhq_ephemeral_font
 end
 
 local function install_project_tree_filter()
-  if default_treeview._sivraj_filter_originals then return end
+  if default_treeview._devhq_filter_originals then return end
 
   local originals = {
     update = default_treeview.update,
@@ -302,7 +302,7 @@ local function install_project_tree_filter()
     node_draw_tab_title = Node.draw_tab_title,
     root_on_mouse_pressed = RootView.on_mouse_pressed,
   }
-  default_treeview._sivraj_filter_originals = originals
+  default_treeview._devhq_filter_originals = originals
 
   function default_treeview:update(...)
     refresh_project_tree_git(false)
@@ -385,24 +385,24 @@ local function install_project_tree_filter()
     local item = toolbar_item_at(self, px, py)
     if item then
       self.hovered_item = nil
-      self._sivraj_filter_hovered_item = item
+      self._devhq_filter_hovered_item = item
       self.tooltip.x, self.tooltip.y = nil, nil
       core.status_view:show_tooltip(item.tooltip)
-      self._sivraj_filter_tooltip = true
+      self._devhq_filter_tooltip = true
       return
     end
-    if self._sivraj_filter_tooltip then
+    if self._devhq_filter_tooltip then
       core.status_view:remove_tooltip()
-      self._sivraj_filter_tooltip = false
+      self._devhq_filter_tooltip = false
     end
-    self._sivraj_filter_hovered_item = nil
+    self._devhq_filter_hovered_item = nil
     return originals.on_mouse_moved(self, px, py, ...)
   end
 
   function default_treeview:on_mouse_left(...)
-    if self._sivraj_filter_tooltip then core.status_view:remove_tooltip() end
-    self._sivraj_filter_tooltip = false
-    self._sivraj_filter_hovered_item = nil
+    if self._devhq_filter_tooltip then core.status_view:remove_tooltip() end
+    self._devhq_filter_tooltip = false
+    self._devhq_filter_hovered_item = nil
     return originals.on_mouse_left(self, ...)
   end
 
@@ -418,7 +418,7 @@ local function install_project_tree_filter()
   end
 
   function Node:draw_tab_title(view, font, ...)
-    if view and view._sivraj_ephemeral then
+    if view and view._devhq_ephemeral then
       font = italic_font(font)
     end
     return originals.node_draw_tab_title(self, view, font, ...)

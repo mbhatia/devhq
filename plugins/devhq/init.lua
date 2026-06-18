@@ -6,25 +6,25 @@ local common = require "core.common"
 local config = require "core.config"
 local context_menu = require "plugins.contextmenu"
 local MessageBox = require "libraries.widget.messagebox"
-local agents = require "plugins.sivraj.agents"
-local comments = require "plugins.sivraj.comments"
-local file_treeview = require "plugins.sivraj.file_treeview"
-local git = require "plugins.sivraj.git"
-local git_doc_view = require "plugins.sivraj.git_doc_view"
+local agents = require "plugins.devhq.agents"
+local comments = require "plugins.devhq.comments"
+local file_treeview = require "plugins.devhq.file_treeview"
+local git = require "plugins.devhq.git"
+local git_doc_view = require "plugins.devhq.git_doc_view"
 local ghostty = require "plugins.ghostty"
-local tree_model = require "plugins.sivraj.tree_model"
+local tree_model = require "plugins.devhq.tree_model"
 local TreeView = require "libraries.generic_treeview"
 local default_treeview = require "plugins.treeview"
 
-local state_filename = USERDIR .. PATHSEP .. "sivraj.lua"
+local state_filename = USERDIR .. PATHSEP .. "devhq.lua"
 
-config.plugins.sivraj = common.merge({
+config.plugins.devhq = common.merge({
   worktree_root = ".worktrees",
-}, config.plugins.sivraj)
+}, config.plugins.devhq)
 
 local function find_sidebar()
   for _, loaded_view in ipairs(core.root_view.root_node:get_children()) do
-    if loaded_view._sivraj_treeview then
+    if loaded_view._devhq_treeview then
       return loaded_view
     end
   end
@@ -225,7 +225,7 @@ local function open_ghostty_tab(options)
 end
 
 local function default_worktree_path(repo, branch)
-  local root = config.plugins.sivraj.worktree_root
+  local root = config.plugins.devhq.worktree_root
   if type(root) ~= "string" or root == "" then root = ".worktrees" end
   root = common.home_expand(root)
   if not common.is_absolute_path(root) then
@@ -281,7 +281,7 @@ local function create_worktree(repo, branch)
 end
 
 local function prompt_create_worktree(repo)
-  if not repo then return core.error("Select a repo in the Sivraj sidebar") end
+  if not repo then return core.error("Select a repo in the DevHQ sidebar") end
   if repo.kind == "remote" then return core.error("Remote repos do not support local worktree creation") end
   core.command_view:enter("Branch Name", {
     submit = function(branch) create_worktree(repo, branch) end,
@@ -301,9 +301,9 @@ local function remove_worktree(repo, worktree)
 end
 
 local function install_selection_handler(view)
-  if view._sivraj_original_set_selection then
-    view.set_selection = view._sivraj_original_set_selection
-    view._sivraj_original_set_selection = nil
+  if view._devhq_original_set_selection then
+    view.set_selection = view._devhq_original_set_selection
+    view._devhq_original_set_selection = nil
   end
   view.activate_on_single_click = true
 end
@@ -358,7 +358,7 @@ end
 local function context_node(kind)
   return function(x, y)
     local view = core.active_view
-    if not (view and view._sivraj_treeview) then return false end
+    if not (view and view._devhq_treeview) then return false end
     local item, item_y = item_at(view, x, y)
     local node = item and item.node
     if not (node and node.kind == kind) then return false end
@@ -369,11 +369,11 @@ local function context_node(kind)
 end
 
 context_menu:register(context_node("repo"), {
-  { text = "Create Worktree", command = "sivraj:create-worktree" },
+  { text = "Create Worktree", command = "devhq:create-worktree" },
 })
 
 context_menu:register(context_node("worktree"), {
-  { text = "Delete Worktree", command = "sivraj:delete-worktree" },
+  { text = "Delete Worktree", command = "devhq:delete-worktree" },
 })
 
 local function ensure_sidebar()
@@ -388,7 +388,7 @@ local function ensure_sidebar()
   view = TreeView({
     backend = backend,
   })
-  view._sivraj_treeview = true
+  view._devhq_treeview = true
   install_selection_handler(view)
   view.node = node:split("left", view, { x = true }, true)
   return view
@@ -497,7 +497,7 @@ end
 command.add(nil, {
   ["ghostty:open-tab"] = open_ghostty_tab,
 
-  ["sivraj:toggle-sidebar"] = function()
+  ["devhq:toggle-sidebar"] = function()
     local view = find_sidebar()
     if view then
       view.visible = not view.visible
@@ -507,7 +507,7 @@ command.add(nil, {
     core.redraw = true
   end,
 
-  ["sivraj:open-repo"] = function()
+  ["devhq:open-repo"] = function()
     core.command_view:enter("Open Repo", {
       text = "~" .. PATHSEP,
       submit = function(text)
@@ -530,7 +530,7 @@ command.add(nil, {
     })
   end,
 
-  ["sivraj:scan-all-repos"] = function()
+  ["devhq:scan-all-repos"] = function()
     core.command_view:enter("Scan Repos", {
       text = "~" .. PATHSEP,
       submit = function(text)
@@ -549,7 +549,7 @@ command.add(nil, {
     })
   end,
 
-  ["sivraj:open-remote-repo"] = function()
+  ["devhq:open-remote-repo"] = function()
     core.command_view:enter("Open Remote Repo", {
       submit = add_remote_repo,
       validate = function(text)
@@ -563,20 +563,20 @@ command.add(nil, {
     })
   end,
 
-  ["sivraj:sync-remote-repos"] = function()
+  ["devhq:sync-remote-repos"] = function()
     sync_all_remote_repos()
   end,
 
-  ["sivraj:create-worktree"] = function()
+  ["devhq:create-worktree"] = function()
     prompt_create_worktree(selected_repo())
   end,
 
-  ["sivraj:delete-worktree"] = function()
+  ["devhq:delete-worktree"] = function()
     local view = find_sidebar()
     local item = context_menu.show_context_menu and context_item or (view and view.selected_item)
     local node = item and item.node
     if not (node and node.kind == "worktree") then
-      return core.error("Select a worktree in the Sivraj sidebar")
+      return core.error("Select a worktree in the DevHQ sidebar")
     end
     if node.repo and node.repo.kind == "remote" then
       return core.error("Remote repos do not support local worktree deletion")
@@ -584,7 +584,7 @@ command.add(nil, {
     remove_worktree(node.repo, node.worktree)
   end,
 
-  ["sivraj:toggle-git-diff-overlay"] = function()
+  ["devhq:toggle-git-diff-overlay"] = function()
     git_doc_view.toggle()
   end,
 })
