@@ -1,0 +1,294 @@
+#!/usr/bin/env lua
+
+local SEP = package.config:sub(1, 1)
+
+local function usage()
+  io.stderr:write([[
+Usage:
+  devhq review reply <comment-id> --message <text>
+
+Environment:
+  DEVHQ_USERDIR  Lite XL user directory containing ws/
+  LITE_USERDIR    Fallback Lite XL user directory
+  AGENT_ID        Optional agent identity stored with the reply
+]])
+  os.exit(2)
+end
+
+local function die(message)
+  io.stderr:write("devhq: " .. message .. "\n")
+  os.exit(1)
+end
+
+local function escape_json(value)
+  return '"' .. tostring(value or ""):gsub('[%z\1-\31\\"]', function(ch)
+    local map = { ["\\"] = "\\\\", ['"'] = '\\"', ["\n"] = "\\n", ["\r"] = "\\r", ["\t"] = "\\t" }
+    return map[ch] or string.format("\\u%04x", ch:byte())
+  end) .. '"'
+end
+
+local function is_array(value)
+  local count = 0
+  for k in pairs(value) do
+    if type(k) ~= "number" then return false end
+    count = math.max(count, k)
+  end
+  return count == #value
+end
+
+local function encode(value)
+  local kind = type(value)
+  if kind == "nil" then return "null" end
+  if kind == "boolean" or kind == "number" then return tostring(value) end
+  if kind == "string" then return escape_json(value) end
+  if is_array(value) then
+    local out = {}
+    for i, item in ipairs(value) do out[i] = encode(item) end
+    return "[" .. table.concat(out, ",") .. "]"
+  end
+  local keys, out = {}, {}
+  for k in pairs(value) do keys[#keys + 1] = k end
+  table.sort(keys)
+  for _, k in ipairs(keys) do
+    out[#out + 1] = escape_json(k) .. ":" .. encode(value[k])
+  end
+  return "{" .. table.concat(out, ",") .. "}"
+end
+
+local function decoder(text)
+  local i = 1
+  local function skip() i = (text:find("%S", i) or (#text + 1)) end
+  local function parse_value()
+    skip()
+    local ch = text:sub(i, i)
+    if ch == '"' then
+      i = i + 1
+      local out = {}
+      while i <= #text do
+        ch = text:sub(i, i)
+        if ch == '"' then i = i + 1; return table.concat(out) end
+        if ch == "\\" then
+          local esc = text:sub(i + 1, i + 1)
+          local map = { ['"'] = '"', ["\\"] = "\\", ["/"] = "/", b = "\b", f = "\f", n = "\n", r = "\r", t = "\t" }
+          if esc == "u" then
+            out[#out + 1] = "?"
+            i = i + 6
+          else
+            out[#out + 1] = map[esc] or esc
+            i = i + 2
+          end
+        else
+          out[#out + 1] = ch
+          i = i + 1
+        end
+      end
+    elseif ch == "{" then
+      i = i + 1
+      local obj = {}
+      skip()
+      if text:sub(i, i) == "}" then i = i + 1; return obj end
+      while true do
+        local key = parse_value()
+        skip()
+        if text:sub(i, i) ~= ":" then return nil end
+        i = i + 1
+        obj[key] = parse_value()
+        skip()
+        ch = text:sub(i, i)
+        if ch == "}" then i = i + 1; return obj end
+        if ch ~= "," then return nil end
+        i = i + 1
+      end
+    elseif ch == "[" then
+      i = i + 1
+      local arr = {}
+      skip()
+      if text:sub(i, i) == "]" then i = i + 1; return arr end
+      while true do
+        arr[#arr + 1] = parse_value()
+        skip()
+        ch = text:sub(i, i)
+        if ch == "]" then i = i + 1; return arr end
+        if ch ~= "," then return nil end
+        i = i + 1
+      end
+    end
+    local word = text:match("^[%w%+%-%.]+", i)
+    i = i + #(word or "")
+    if word == "true" then return true end
+    if word == "false" then return false end
+    if word == "null" then return nil end
+    return tonumber(word)
+  end
+  return parse_value()
+end
+
+local function now()
+  return os.date("!%Y-%m-%dT%H:%M:%SZ")
+end
+
+local function dirname(path)
+  local normalized = path:gsub("[/\\]+$", "")
+  return normalized:match("^(.*)[/\\][^/\\]+$") or "."
+end
+
+local function join(a, b)
+  if a:sub(-1) == "/" or a:sub(-1) == "\\" then return a .. b end
+  return a .. SEP .. b
+end
+
+local function absolute(path)
+  if path:sub(1, 1) == "/" or path:match("^%a:[/\\]") then return path end
+  return join(os.getenv("PWD") or ".", path)
+end
+
+local function script_dir()
+  local source = arg and arg[0]
+  if not source or source == "" or not source:find("[/\\]") then return nil end
+  return dirname(absolute(source))
+end
+
+local function shell_quote(value)
+  return "'" .. value:gsub("'", "'\\''") .. "'"
+end
+
+local function comment_files(userdir)
+  local ws = join(userdir, "ws")
+  local cmd = "ls -1 " .. shell_quote(ws) .. " 2>/dev/null"
+  local pipe = io.popen(cmd, "r")
+  if not pipe then return {} end
+  local files = {}
+  for file in pipe:lines() do
+    if file:match("%-devhq%-comments%-%d+%.jsonl$") then
+      files[#files + 1] = join(ws, file)
+    end
+  end
+  pipe:close()
+  return files
+end
+
+local function read_jsonl(filename)
+  local fp = io.open(filename, "r")
+  if not fp then return nil end
+  local items = {}
+  for line in fp:lines() do
+    local ok, item = pcall(decoder, line)
+    if ok and type(item) == "table" then items[#items + 1] = item end
+  end
+  fp:close()
+  return items
+end
+
+local function write_jsonl(filename, items)
+  local tmp = filename .. ".tmp"
+  local fp = io.open(tmp, "w")
+  if not fp then die("cannot write " .. tmp) end
+  for _, item in ipairs(items) do fp:write(encode(item), "\n") end
+  fp:close()
+  local ok, err = os.rename(tmp, filename)
+  if not ok then
+    os.remove(tmp)
+    die("cannot replace " .. filename .. ": " .. tostring(err))
+  end
+end
+
+local function normalize_thread(item)
+  item.messages = type(item.messages) == "table" and item.messages or nil
+  if not item.messages then
+    item.messages = {}
+    if item.body and item.body ~= "" then
+      item.messages[#item.messages + 1] = {
+        author = "user",
+        body = item.body,
+        state = item.state == "draft" and "draft" or "open",
+        created_at = item.created_at,
+        updated_at = item.updated_at,
+      }
+    end
+    for _, reply in ipairs(type(item.replies) == "table" and item.replies or {}) do
+      item.messages[#item.messages + 1] = {
+        author = reply.author or "user",
+        body = reply.body or "",
+        state = reply.state or "open",
+        created_at = reply.created_at,
+        updated_at = reply.updated_at,
+      }
+    end
+  end
+  if #item.messages == 0 then
+    item.messages[1] = { author = "user", body = "", state = "draft", created_at = item.created_at, updated_at = item.updated_at }
+  end
+  for _, message in ipairs(item.messages) do
+    message.author = message.author == "agent" and "agent" or "user"
+    message.state = message.state or (item.state == "draft" and "draft" or "open")
+    if item.state == "resolved" and message.state == "open" then message.state = "resolved" end
+  end
+  item.state = item.state or "draft"
+  item.body, item.replies = nil, nil
+  return item
+end
+
+local function parse_args()
+  if arg[1] == "--help" or arg[1] == "-h" then usage() end
+  if arg[1] ~= "review" or arg[2] ~= "reply" or not arg[3] then usage() end
+  local comment_id, message = arg[3], nil
+  local i = 4
+  while i <= #arg do
+    if arg[i] == "--message" then
+      if message ~= nil or not arg[i + 1] then usage() end
+      message = arg[i + 1]
+      i = i + 2
+    else
+      usage()
+    end
+  end
+  if message == nil or message == "" then die("--message is required") end
+  return comment_id, message
+end
+
+local function find_comment(userdir, comment_id)
+  local match = nil
+  for _, filename in ipairs(comment_files(userdir)) do
+    local items = read_jsonl(filename)
+    if items then
+      for index, item in ipairs(items) do
+        if item.id == comment_id then
+          if match then die("comment id is ambiguous: " .. comment_id) end
+          match = { filename = filename, items = items, index = index, item = item }
+        end
+      end
+    end
+  end
+  return match
+end
+
+local function main()
+  local comment_id, message = parse_args()
+  local userdir = os.getenv("DEVHQ_USERDIR") or os.getenv("LITE_USERDIR") or script_dir()
+  if not userdir then die("cannot infer user directory; set DEVHQ_USERDIR") end
+
+  local match = find_comment(userdir, comment_id)
+  if not match then die("comment not found: " .. comment_id) end
+
+  local timestamp = now()
+  local item = normalize_thread(match.item)
+  local reply_id = item.id .. ":reply:" .. tostring(#item.messages + 1)
+  local reply = {
+    id = reply_id,
+    author = "agent",
+    body = message,
+    state = "open",
+    created_at = timestamp,
+    updated_at = timestamp,
+  }
+  local agent_id = os.getenv("AGENT_ID")
+  if agent_id and agent_id ~= "" then reply.agent_id = agent_id end
+
+  item.messages[#item.messages + 1] = reply
+  item.updated_at = timestamp
+  match.items[match.index] = item
+  write_jsonl(match.filename, match.items)
+  print(reply_id)
+end
+
+main()

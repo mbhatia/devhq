@@ -105,6 +105,20 @@ brew tap shell-pool/shpool
 brew install shpool
 ```
 
+## Review Reply CLI
+
+Agents can reply to an existing DevHQ review comment from the command line:
+
+```sh
+./devhq review reply <comment-id> --message "Addressed in the latest changes."
+```
+
+The command only appends an `agent` reply to the existing comment. It does not
+create comments or resolve them. On success it prints the new reply ID.
+
+Set `DEVHQ_USERDIR` or `LITE_USERDIR` when the script cannot infer the Lite XL
+user directory from its own path.
+
 <!-- ## Configuration -->
 
 <!-- ### Commands -->
