@@ -65,29 +65,42 @@ to run agents. It can be paired with terminal sessions managers like
 [shpool](https://github.com/shell-pool/shpool), [atch](https://github.com/mobydeck/atch)
 to provide simple reattachment across restarts of lite-xl.
 
-* Install [Lite-XL Package Manager](https://github.com/lite-xl/lite-xl-plugin-manager#linux--mac) (`lpm`):
+Install DevHQ, Lite XL, and the required Lite XL packages with:
 
+```sh
+curl -fsSL https://raw.githubusercontent.com/mbhatia/devhq/main/install.sh | sh
 ```
+
+The installer supports macOS and Linux on `x86_64` and `aarch64`. It downloads
+the Lite XL Package Manager (`lpm`) to a temporary directory, uses it to install
+Lite XL, adds the DevHQ package repository, and installs the `devhq` package.
+
+To install from a fork or another repository:
+
+```sh
+DEVHQ_REPOSITORY_URL=https://github.com/example/devhq \
+  sh ./install.sh
+```
+
+### Manual Install
+
+Install [Lite XL Package Manager](https://github.com/lite-xl/lite-xl-plugin-manager#linux--mac) (`lpm`):
+
+```sh
 wget https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest/lpm.`uname -m | sed 's/arm64/aarch64/'`-`uname | tr '[:upper:]' '[:lower:]'` -O lpm && chmod +x lpm
 ```
 
-* Install `lite-xl` using `lpm`:
+Install Lite XL and DevHQ:
 
-```
+```sh
 ./lpm install lite-xl
-```
-
-* Install DevHQ:
-
-```
 ./lpm repo add https://github.com/mbhatia/devhq
 ./lpm install devhq
 ```
-This will automatically install `lite-xl-ghostty` as well.
 
-* (optional) Install `shpool` for better agent life-cycle management:
+Optional: install `shpool` for better agent life-cycle management:
 
-```
+```sh
 brew tap shell-pool/shpool
 brew install shpool
 ```
