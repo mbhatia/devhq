@@ -1,6 +1,137 @@
-# Sivraj
+# DevHQ
 
-Sivraj is a Lite XL plugin that adds a small repository sidebar to the left of
+A unified developer control plane for developers managing parallel coding work
+across local repositories, remote worktrees, AI agents, terminals, diffs, and review comments.
+
+<!-- Enter DevHQ, a Development Supervisor built for developers. DevHQ provides a -->
+<!-- single pane of glass, a unified environment for developers to track and manage -->
+<!-- multiple workstreams through the software development lifecycle. -->
+
+When a developer manages a team of agents, the classic IDEs geared for
+managing 1 task/project at a time do not scale. Just like a manager uses Jira/Linear
+to track the progress of a team, we need a unified tool for developers to keep
+track of all their active tasks and interact with agents working on them.
+Agents are just a stepping stone to get the work done. We need to focus on tracking
+work and not agents.
+
+DevHQ aims to be a single pane of glass for developers. The goal is to allow
+developers to run the full SDLC, from work intake to production deploy through a single UI.
+
+<!-- Charles is an AI agent supervisor and coding management platform for developers. -->
+<!-- It provides a helpful interface to organize, streamline, and oversee the coding -->
+<!-- efforts of multiple AI agents working on one or many projects. -->
+<!-- It enables you to streamline the definition of agents and guardrails for a project, -->
+<!-- have organized communications with agents, and complete effective code reviews. -->
+<!-- All while overseeing the agent’s coding efforts. Then you can share the resulting -->
+<!-- code with your integrated code management platform. -->
+
+## Core Philosohpy
+
+There are 3 main pillars of why we built DevHQ:
+1. Code still matters.
+
+  We believe that while AI is abstracting code behind natural language,
+  code still matters and developers need to understand the code that the agent is
+  writing in context of the broader project.
+  This means we need IDE-like features, like code navigation, but don't need the
+  full overhead of an IDE context switching. We should be able to switch between project
+  contexts with lightning speed.
+
+2. Development work is not linear
+
+  Developers need to quickly jump between agents or sometimes pick up an
+  idea after a few weeks without losing their place.
+  We need a way to visually see all "open" work. Git worktrees are the backbone for tracking
+  the lifecycle of development work.
+
+3. Chat is a bad interface for providing feedback to your agents.
+
+  While prompting is useful for steering an agent in-flight, it is not suitable
+  for providing structural feedback on an Agent's output. We can push every change to
+  the central code review platform (github, gitlab etc.), but that elongates the
+  feedback loop.
+  We need tigther feedback loops to work with these agents that can provide local
+  code-review capability
+
+## Installation
+
+<!-- Note: Even though DevHQ is compatible with all platforms, `lite-xl-ghostty` only supports Mac/Linux right now. -->
+
+DevHQ is implemented as a custom plugin to [Lite XL](https://lite-xl.com/),
+making it highly customizable to match your personal preferences.
+
+It bundles a ghostty based terminal [lite-xl-ghostty](https://github.com/mbhatia/lite-xl-ghostty)
+to run agents. It can be paired with terminal sessions managers like
+[shpool](https://github.com/shell-pool/shpool), [atch](https://github.com/mobydeck/atch)
+to provide simple reattachment across restarts of lite-xl.
+
+* Install [Lite-XL Package Manager](https://github.com/lite-xl/lite-xl-plugin-manager#linux--mac) (`lpm`):
+
+```
+wget https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest/lpm.`uname -m | sed 's/arm64/aarch64/'`-`uname | tr '[:upper:]' '[:lower:]'` -O lpm && chmod +x lpm
+```
+
+* Install `lite-xl` using `lpm`:
+
+```
+./lpm install lite-xl
+```
+
+* Install DevHQ:
+
+```
+./lpm repo add https://github.com/mbhatia/devhq
+./lpm install devhq
+```
+This will automatically install `lite-xl-ghostty` as well.
+
+* (optional) Install `shpool` for better agent life-cycle management:
+
+```
+brew tap shell-pool/shpool
+brew install shpool
+```
+
+<!-- ## Configuration -->
+
+<!-- ### Commands -->
+<!-- Out of the box, DevHQ will give you the following commands that you can run using the command palette (`Cmd+Shift+P`): -->
+
+<!-- - `devhq:toggle-sidebar` -->
+<!-- - `devhq:open-repo` -->
+<!-- - `devhq:open-remote-repo` -->
+<!-- - `devhq:scan-all-repos` -->
+<!-- - `devhq:sync-remote-repos` -->
+
+<!-- `open-repo` adds one git repository. -->
+
+<!-- `open-remote-repo` adds one remote git repository. Enter the remote as: -->
+
+<!-- ```text -->
+<!-- server:/path/to/repo -->
+<!-- ``` -->
+
+<!-- DevHQ connects with `ssh`, reads remote worktree metadata with `/bin/sh`, and -->
+<!-- creates a shallow local mirror under `USERDIR/devhq-remote-repos`. Remote -->
+<!-- worktree rows open the local mirrored worktree paths so Lite XL can render files -->
+<!-- and diffs locally. -->
+
+<!-- Remote uncommitted and staged files are not mirrored. The mirror represents -->
+<!-- commits and worktree branch checkouts only. -->
+
+<!-- `scan-all-repos` walks a directory and adds every git repository it finds. -->
+
+<!-- `sync-remote-repos` refreshes every configured remote repository mirror. -->
+
+<!-- Top-level repository rows only expand or collapse. Worktree rows change the -->
+<!-- active Lite XL project folder. -->
+
+
+
+<!--
+## Architecture
+
+DevHQ is a Lite XL plugin that adds a small repository sidebar to the left of
 the core treeview.
 
 The sidebar lists git repositories. Each repository expands to the worktrees
@@ -10,19 +141,19 @@ that worktree.
 
 ## Information Architecture
 
-`plugins/sivraj/init.lua`
+`plugins/devhq/init.lua`
 
 Plugin entry point. It owns the sidebar lifecycle, commands, persisted state,
 tree model, and project switching.
 
 It does four things on load:
 
-1. Loads `USERDIR/sivraj.lua`.
+1. Loads `USERDIR/devhq.lua`.
 2. Refreshes worktrees for persisted repositories.
-3. Ensures the Sivraj sidebar exists to the left of the core treeview.
+3. Ensures the DevHQ sidebar exists to the left of the core treeview.
 4. Restores the selected worktree as the active project when possible.
 
-`plugins/sivraj/git.lua`
+`plugins/devhq/git.lua`
 
 Small git boundary. It shells out to `git` and exposes:
 
@@ -33,10 +164,10 @@ Small git boundary. It shells out to `git` and exposes:
 
 `manifest.json`
 
-LPM package manifest. The `sivraj` plugin depends on `generic_treeview`.
+LPM package manifest. The `devhq` plugin depends on `generic_treeview`.
 `generic_treeview` is vendored in this repo under `libraries/`.
 
-`USERDIR/sivraj.lua`
+`USERDIR/devhq.lua`
 
 Runtime state file written by the plugin. It stores:
 
@@ -45,49 +176,32 @@ Runtime state file written by the plugin. It stores:
 - Expanded/collapsed repository state.
 - Selected worktree path.
 
-## Commands
+## Review Reply CLI
 
-- `sivraj:toggle-sidebar`
-- `sivraj:open-repo`
-- `sivraj:open-remote-repo`
-- `sivraj:scan-all-repos`
-- `sivraj:sync-remote-repos`
+Agents can reply to an existing review comment from the command line:
 
-`open-repo` adds one git repository.
-
-`open-remote-repo` adds one remote git repository. Enter the remote as:
-
-```text
-server:/path/to/repo
+```sh
+./devhq review reply <comment-id> --message "Addressed in the latest changes."
 ```
 
-Sivraj connects with `ssh`, reads remote worktree metadata with `/bin/sh`, and
-creates a shallow local mirror under `USERDIR/sivraj-remote-repos`. Remote
-worktree rows open the local mirrored worktree paths so Lite XL can render files
-and diffs locally.
+The command only appends an `agent` reply to the existing comment. It does not
+create comments or resolve them. On success it prints the new reply ID.
 
-Remote uncommitted and staged files are not mirrored. The mirror represents
-commits and worktree branch checkouts only.
-
-`scan-all-repos` walks a directory and adds every git repository it finds.
-
-`sync-remote-repos` refreshes every configured remote repository mirror.
-
-Top-level repository rows only expand or collapse. Worktree rows change the
-active Lite XL project folder.
+Set `DEVHQ_USERDIR` or `LITE_USERDIR` when the script cannot infer the Lite XL
+user directory from its own path.
 
 ## Install With LPM
 
 From this repo:
 
 ```sh
-lpm --repository="$PWD" plugin install sivraj
+lpm --repository="$PWD" plugin install devhq
 ```
 
 From another directory:
 
 ```sh
-lpm --repository=/path/to/sivraj plugin install sivraj
+lpm --repository=/path/to/devhq plugin install devhq
 ```
 
 LPM installs `generic_treeview` from the vendored library declared in
@@ -102,21 +216,11 @@ LITE_USERDIR="$PWD" "/Applications/Lite XL.app/Contents/MacOS/lite-xl"
 ```
 
 The vendored treeview library is loaded from `libraries/generic_treeview.lua`.
-The plugin itself is loaded from `plugins/sivraj`.
+The plugin itself is loaded from `plugins/devhq`.
 
 The development state file will be written to:
 
 ```text
-./sivraj.lua
+./devhq.lua
 ```
-
-## Notes
-
-This plugin does not replace Lite XL's core treeview. It selects a repository
-or worktree, then lets the core treeview browse that selected project folder.
-
-Git worktree information is read with:
-
-```sh
-git -C <repo> worktree list --porcelain
-```
+-->
