@@ -1,0 +1,345 @@
+---
+import { Image } from "astro:assets";
+import Base from "../layouts/Base.astro";
+import CopyCommand from "../components/CopyCommand.astro";
+import { url } from "../lib/url";
+import { INSTALL_CMD, GITHUB_URL } from "../lib/docs";
+import cover from "../assets/devhq-cover.png";
+
+const pillars = [
+  {
+    k: "01",
+    title: "See every workstream",
+    body: "A sidebar with all your repositories and their worktrees. Select one and the editor follows. Local and remote, side by side.",
+  },
+  {
+    k: "02",
+    title: "Supervise agents",
+    body: "Launch one or more agents from profiles into worktree-aware terminals.",
+  },
+  {
+    k: "03",
+    title: "Review the diff",
+    body: "See the whole project, or filter the tree to uncommitted, staged, or HEAD. Read diffs and comment inline in the editor.",
+  },
+  {
+    k: "04",
+    title: "Close the loop",
+    body: "Send comments directly to the agent working the branch.",
+  },
+];
+
+const philosophy = [
+  {
+    title: "Code still matters",
+    body: "AI hides code behind natural language. You still own it. DevHQ keeps the agent, the code, and its context, one keystroke away — without the weight of a full IDE.",
+  },
+  {
+    title: "Work is not linear",
+    body: "You jump between agents and workstreams. You return to an idea weeks later. Git worktrees make open work visible, so nothing is lost between sessions.",
+  },
+  {
+    title: "Chat is a poor feedback tool",
+    body: "Prompts steer an agent in flight. They do not work well to provide contextual feedback. DevHQ gives you a local code-review loop with a tight feedback path.",
+  },
+];
+
+const features = [
+  ["Repository sidebar", "Add one repo or scan a directory. Group local and remote work under one name."],
+  ["Worktree management", "Create and delete local worktrees from the sidebar. Switch projects instantly."],
+  ["Remote mirroring", "Add server:/path/to/repo. DevHQ mirrors remote worktrees over SSH for local browsing and diffs."],
+  ["Agent profiles", "Configurable profiles. Default profiles for codex and claude."],
+  ["Diff overlays", "Additions, modifications, deletions in the editor view. Click for the full hunk."],
+  ["Inline review comments", "Select code, draft a comment, reopen from the gutter, reply, resolve."],
+  ["Contextual terminals", "Ghostty tabs open in the active worktree — or SSH into the remote one."],
+  ["Persistent state", "Repositories, worktrees, agents, and threads survive restarts and restore on load."],
+];
+---
+
+<Base>
+  <!-- hero -->
+  <section class="hero page">
+    <div class="hero-copy">
+      <p class="eyebrow">A control plane for developers</p>
+      <h1>Supervise parallel work.</h1>
+      <p class="lede">
+        One developer. Many agents, branches, and machines. DevHQ is the layer
+        above the editor — where you track work, switch context, review output,
+        and talk to agents.
+      </p>
+      <div class="hero-cta">
+        <CopyCommand command={INSTALL_CMD} />
+        <div class="hero-actions">
+          <a class="btn btn-primary" href={url("/docs/getting-started")}>Get started</a>
+          <a class="btn btn-ghost" href={GITHUB_URL} rel="noopener" target="_blank">View source</a>
+        </div>
+        <p class="hero-note mono">macOS &amp; Linux · a Lite XL plugin · open source</p>
+      </div>
+    </div>
+    <div class="hero-mock">
+      <Image
+        src={cover}
+        alt="DevHQ running in Lite XL: a repository and worktree sidebar, an open diff, and an agent terminal."
+        widths={[640, 960, 1280, 1728]}
+        sizes="(max-width: 900px) 92vw, 52vw"
+        loading="eager"
+        class="cover"
+      />
+    </div>
+  </section>
+
+  <!-- positioning -->
+  <section class="section page">
+    <div class="positioning">
+      <h2>Classic IDEs assume one task.<br />Agents broke that assumption.</h2>
+      <p class="muted">
+        An IDE is built around one active project and one active session. When a
+        developer runs several agents across branches, worktrees, and remote
+        hosts at once, that model stops scaling. You manage work, not files.
+        DevHQ turns the editor into a control plane for work.
+      </p>
+    </div>
+  </section>
+
+  <!-- pillars / features -->
+  <section id="features" class="section page">
+    <div class="section-head">
+      <p class="eyebrow">What it does</p>
+      <h2>Four moves, one pane.</h2>
+      <p>The loop a developer runs all day — contained in a single pane of glass.</p>
+    </div>
+    <div class="pillars">
+      {pillars.map((p) => (
+        <div class="pillar">
+          <span class="pillar-k mono">{p.k}</span>
+          <h3>{p.title}</h3>
+          <p>{p.body}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- philosophy -->
+  <section id="philosophy" class="section page">
+    <div class="section-head">
+      <p class="eyebrow">Why it exists</p>
+      <h2>Three convictions.</h2>
+    </div>
+    <div class="philosophy">
+      {philosophy.map((p, i) => (
+        <div class="conviction">
+          <span class="conviction-n mono">{String(i + 1).padStart(2, "0")}</span>
+          <div>
+            <h3>{p.title}</h3>
+            <p>{p.body}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- feature grid -->
+  <section class="section page">
+    <div class="section-head">
+      <p class="eyebrow">In the box</p>
+      <h2>Built for your daily workflow.</h2>
+    </div>
+    <div class="feature-grid">
+      {features.map(([title, body]) => (
+        <div class="feature">
+          <h3>{title}</h3>
+          <p>{body}</p>
+        </div>
+      ))}
+    </div>
+  </section>
+
+  <!-- install -->
+  <section class="section page">
+    <div class="install">
+      <p class="eyebrow">Get started</p>
+      <h2>One command.</h2>
+      <p class="muted">
+        The installer fetches the Lite XL package manager, installs Lite XL,
+        adds the DevHQ repository, and installs the plugin. macOS and Linux,
+        x86_64 and aarch64.
+      </p>
+      <CopyCommand command={INSTALL_CMD} />
+      <div class="hero-actions">
+        <a class="btn btn-primary" href={url("/docs/getting-started")}>Read the guide</a>
+        <a class="btn btn-ghost" href={url("/docs/commands")}>Browse commands</a>
+      </div>
+    </div>
+  </section>
+</Base>
+
+<style>
+  /* hero */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+    gap: 56px;
+    align-items: center;
+    padding-top: 72px;
+    padding-bottom: 80px;
+  }
+  .hero h1 {
+    font-size: clamp(40px, 6vw, 66px);
+    margin: 16px 0 0;
+  }
+  .lede {
+    margin-top: 22px;
+    max-width: 520px;
+    font-size: 19px;
+    color: var(--muted);
+  }
+  .hero-cta {
+    margin-top: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 540px;
+  }
+  .hero-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .hero-note {
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--faint);
+  }
+
+  /* hero screenshot */
+  .hero-mock :global(.cover) {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.55);
+  }
+
+  /* positioning */
+  .positioning {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 48px;
+    align-items: start;
+  }
+  .positioning h2 {
+    font-size: clamp(24px, 3.4vw, 32px);
+    line-height: 1.18;
+  }
+  .positioning p {
+    font-size: 17px;
+  }
+
+  /* pillars */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--border-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .pillar {
+    background: var(--bg);
+    padding: 28px;
+  }
+  .pillar-k {
+    color: var(--accent-hover);
+    font-size: 13px;
+  }
+  .pillar h3 {
+    margin: 12px 0 8px;
+    font-size: 19px;
+  }
+  .pillar p {
+    color: var(--muted);
+  }
+
+  /* philosophy */
+  .philosophy {
+    display: grid;
+    gap: 8px;
+  }
+  .conviction {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 20px;
+    padding: 22px 0;
+    border-top: 1px solid var(--border-soft);
+    align-items: baseline;
+  }
+  .conviction:first-child {
+    border-top: 0;
+  }
+  .conviction-n {
+    color: var(--faint);
+    font-size: 14px;
+  }
+  .conviction h3 {
+    font-size: 19px;
+  }
+  .conviction p {
+    margin-top: 8px;
+    color: var(--muted);
+    max-width: 680px;
+  }
+
+  /* feature grid */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px 40px;
+  }
+  .feature {
+    border-left: 2px solid var(--border);
+    padding-left: 16px;
+  }
+  .feature:hover {
+    border-left-color: var(--accent);
+  }
+  .feature h3 {
+    font-size: 16px;
+  }
+  .feature p {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 15px;
+  }
+
+  /* install */
+  .install {
+    max-width: 620px;
+  }
+  .install h2 {
+    font-size: clamp(26px, 4vw, 34px);
+    margin: 14px 0 14px;
+  }
+  .install p {
+    margin-bottom: 22px;
+  }
+  .install .hero-actions {
+    margin-top: 18px;
+  }
+
+  @media (max-width: 900px) {
+    .hero,
+    .positioning {
+      grid-template-columns: 1fr;
+    }
+    .hero {
+      padding-top: 48px;
+      gap: 40px;
+    }
+    .pillars,
+    .feature-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

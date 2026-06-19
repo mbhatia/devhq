@@ -1,0 +1,301 @@
+---
+// A stylized, looping mock of the DevHQ workspace: repository/worktree sidebar,
+// a diff column, and an agent terminal that cycles from "needs input" to a reply.
+// Pure CSS animation; no runtime JS. Honors prefers-reduced-motion.
+---
+
+<div class="ws" role="img" aria-label="DevHQ workspace: a repository sidebar, a diff view, and an agent terminal.">
+  <div class="ws-chrome">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span class="ws-title mono">devhq — supervisor</span>
+  </div>
+  <div class="ws-body">
+    <!-- sidebar -->
+    <aside class="ws-side">
+      <div class="side-group">devhq <span class="badge">repo</span></div>
+      <div class="side-row">main <span class="meta">local</span></div>
+      <div class="side-row active">agent-review <span class="meta">2 agents</span></div>
+      <div class="side-row">
+        ui-polish
+        <span class="attn"><span class="pulse"></span>needs input</span>
+      </div>
+      <div class="side-group">nextunnel <span class="badge">repo</span></div>
+      <div class="side-row">[dev226] develop <span class="meta">remote</span></div>
+    </aside>
+
+    <!-- diff -->
+    <section class="ws-diff">
+      <div class="diff-head mono">comments.lua <span class="meta">+18 −6</span></div>
+      <div class="diff-line add"><span>+</span> add review thread</div>
+      <div class="diff-line add"><span>+</span> attach comment to hunk</div>
+      <div class="diff-line del"><span>−</span> remove stale branch ref</div>
+      <div class="diff-line ctx"><span> </span> resolve open threads</div>
+      <div class="diff-comment">
+        <span class="meta mono">comment · you</span>
+        <p>Guard against an empty selection here.</p>
+      </div>
+    </section>
+
+    <!-- terminal -->
+    <section class="ws-term mono">
+      <div class="term-line"><span class="p">$</span> codex --add-dir $REPO</div>
+      <div class="term-line dim">agent: editing comments.lua…</div>
+      <div class="term-line attn-line"><span class="bang">!</span> agent needs input</div>
+      <div class="term-line"><span class="p">$</span> devhq review reply 4f2 \</div>
+      <div class="term-line typed">
+        <span class="ty">--message "addressed in latest changes"</span><span class="cursor"></span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<style>
+  .ws {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(99, 102, 241, 0.06),
+      0 30px 80px -30px rgba(0, 0, 0, 0.8);
+  }
+  .ws-chrome {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 36px;
+    padding: 0 14px;
+    background: var(--panel-2);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #3a4250;
+  }
+  .ws-title {
+    margin-left: 10px;
+    font-size: 12px;
+    color: var(--faint);
+  }
+  .ws-body {
+    display: grid;
+    grid-template-columns: 0.95fr 1.1fr 1.15fr;
+    min-height: 280px;
+    font-size: 12.5px;
+  }
+  .ws-side,
+  .ws-diff,
+  .ws-term {
+    padding: 14px;
+    border-right: 1px solid var(--border-soft);
+  }
+  .ws-term {
+    border-right: 0;
+    background: #0b0f15;
+  }
+
+  /* sidebar */
+  .side-group {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text);
+    margin: 6px 0 4px;
+  }
+  .side-group:first-child {
+    margin-top: 0;
+  }
+  .side-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 8px;
+    margin: 0 -8px;
+    border-radius: 5px;
+    color: var(--muted);
+  }
+  .side-row.active {
+    background: var(--accent-soft);
+    color: var(--text);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .badge,
+  .meta {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--faint);
+  }
+  .badge {
+    color: var(--accent-hover);
+  }
+  .attn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--amber);
+  }
+  .pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--amber);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+
+  /* diff */
+  .diff-head {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text);
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .diff-line {
+    font-family: var(--font-mono);
+    padding: 2px 0;
+    color: var(--muted);
+  }
+  .diff-line span {
+    display: inline-block;
+    width: 1.2em;
+    color: var(--faint);
+  }
+  .diff-line.add {
+    color: #7ee787;
+  }
+  .diff-line.add span {
+    color: #2ea043;
+  }
+  .diff-line.del {
+    color: #ffa198;
+  }
+  .diff-line.del span {
+    color: var(--red);
+  }
+  .diff-comment {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  .diff-comment p {
+    margin-top: 4px;
+    color: var(--text);
+  }
+
+  /* terminal */
+  .term-line {
+    font-family: var(--font-mono);
+    padding: 2px 0;
+    color: #c9d1d9;
+    white-space: nowrap;
+  }
+  .term-line .p {
+    color: var(--accent-hover);
+  }
+  .term-line.dim {
+    color: var(--faint);
+  }
+  .attn-line {
+    color: var(--amber);
+    animation: blink-soft 1.6s steps(1) infinite;
+  }
+  .attn-line .bang {
+    color: var(--amber);
+    font-weight: 700;
+  }
+  .typed {
+    overflow: hidden;
+  }
+  .ty {
+    display: inline-block;
+    overflow: hidden;
+    white-space: nowrap;
+    vertical-align: bottom;
+    width: 0;
+    animation: type 3.4s steps(40) infinite;
+  }
+  .cursor {
+    display: inline-block;
+    width: 7px;
+    height: 1.05em;
+    margin-left: 1px;
+    background: var(--accent-hover);
+    vertical-align: text-bottom;
+    animation: caret 1s steps(1) infinite;
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 rgba(210, 153, 34, 0.5);
+    }
+    50% {
+      opacity: 0.6;
+      box-shadow: 0 0 0 5px rgba(210, 153, 34, 0);
+    }
+  }
+  @keyframes blink-soft {
+    0%,
+    60%,
+    100% {
+      opacity: 1;
+    }
+    80% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes type {
+    0% {
+      width: 0;
+    }
+    45%,
+    90% {
+      width: 27ch;
+    }
+    100% {
+      width: 0;
+    }
+  }
+  @keyframes caret {
+    50% {
+      opacity: 0;
+    }
+  }
+
+  @media (max-width: 900px) {
+    .ws-body {
+      grid-template-columns: 1fr;
+    }
+    .ws-side,
+    .ws-diff {
+      border-right: 0;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .term-line,
+    .diff-line {
+      white-space: normal;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pulse,
+    .attn-line,
+    .ty,
+    .cursor {
+      animation: none;
+    }
+    .ty {
+      width: 27ch;
+    }
+  }
+</style>
