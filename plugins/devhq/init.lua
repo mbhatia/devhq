@@ -20,7 +20,20 @@ local state_filename = USERDIR .. PATHSEP .. "devhq.lua"
 
 config.plugins.devhq = common.merge({
   worktree_root = ".worktrees",
+  webview_open_html_files = true,
+  webview_open_localhost_urls = true,
+  webview_public_url_action = "prompt",
 }, config.plugins.devhq)
+
+config.plugins.devhq.config_spec = config.plugins.devhq.config_spec or {
+  name = "DevHQ",
+  { label = "Worktree Root", path = "worktree_root", type = "STRING", default = ".worktrees" },
+  { label = "Open HTML Files In Webview", path = "webview_open_html_files", type = "TOGGLE", default = true },
+  { label = "Open Localhost URLs In Webview", path = "webview_open_localhost_urls", type = "TOGGLE", default = true },
+  { label = "Public URL Action", path = "webview_public_url_action", type = "STRING", default = "prompt" },
+}
+
+require "plugins.devhq.webview_links".setup()
 
 local function find_sidebar()
   for _, loaded_view in ipairs(core.root_view.root_node:get_children()) do

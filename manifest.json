@@ -10,6 +10,13 @@
       "path": "libraries/generic_treeview.lua"
     },
     {
+      "id": "web",
+      "version": "0.1.2",
+      "mod_version": "3",
+      "type": "plugin",
+      "remote": "https://github.com/mbhatia/lite-xl-web.git:v0.1.2"
+    },
+    {
       "id": "devhq",
       "version": "0.1.0",
       "mod_version": "3",
@@ -18,7 +25,10 @@
       "description": "Repository and worktree sidebar for Lite XL.",
       "path": "plugins/devhq",
       "dependencies": {
-        "generic_treeview": {}
+        "generic_treeview": {},
+        "web": {
+          "version": ">=0.1.2"
+        }
       }
     }
   ],
