@@ -11,10 +11,10 @@
     },
     {
       "id": "web",
-      "version": "0.1.2",
+      "version": "0.1.4",
       "mod_version": "3",
       "type": "plugin",
-      "remote": "https://github.com/mbhatia/lite-xl-web.git:v0.1.2"
+      "remote": "https://github.com/mbhatia/lite-xl-web.git:v0.1.4"
     },
     {
       "id": "devhq",
@@ -27,7 +27,7 @@
       "dependencies": {
         "generic_treeview": {},
         "web": {
-          "version": ">=0.1.2"
+          "version": ">=0.1.4"
         }
       }
     }
