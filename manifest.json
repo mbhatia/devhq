@@ -14,7 +14,14 @@
       "version": "0.1.4",
       "mod_version": "3",
       "type": "plugin",
-      "remote": "https://github.com/mbhatia/lite-xl-web.git:v0.1.4"
+      "remote": "https://github.com/mbhatia/lite-xl-web.git:main"
+    },
+    {
+      "id": "web_lxl",
+      "version": "0.1.4",
+      "mod_version": "3",
+      "type": "library",
+      "remote": "https://github.com/mbhatia/lite-xl-web.git:main"
     },
     {
       "id": "devhq",
@@ -33,5 +40,7 @@
     }
   ],
   "lite-xls": [],
-  "remotes": []
+  "remotes": [
+    "https://github.com/mbhatia/lite-xl-web.git:main"
+  ]
 }
