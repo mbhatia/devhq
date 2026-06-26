@@ -1,5 +1,7 @@
 # DevHQ
 
+**This is an early preview release. Consider this a prototype/Alpha release.**
+
 A unified developer control plane for developers managing parallel coding work
 across local repositories, remote worktrees, AI agents, terminals, diffs, and review comments.
 
