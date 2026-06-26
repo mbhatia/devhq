@@ -1,0 +1,53 @@
+# Build the DevHQ website (website/) and deploy it to GitHub Pages.
+#
+# Served on the custom domain https://devhq.app at the root; `base` is "/" in
+# astro.config.mjs, and website/public/CNAME tells GitHub Pages the domain.
+#
+# One-time setup:
+#   1. Settings → Pages → Build and deployment → Source: GitHub Actions.
+#   2. Settings → Pages → Custom domain: devhq.app (then enable "Enforce HTTPS"
+#      once the cert is issued). The CNAME file keeps this set across deploys.
+#   3. DNS for devhq.app: four A records → 185.199.108–111.153, plus an AAAA
+#      set for IPv6 (2606:50c0:8000–8003::153). For www, add a CNAME →
+#      <user>.github.io.
+name: Deploy website to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; let in-progress runs finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build with Astro
+        uses: withastro/action@v3
+        with:
+          path: ./website
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

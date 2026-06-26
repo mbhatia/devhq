@@ -1,0 +1,32 @@
+---
+import Base from "../layouts/Base.astro";
+import { url } from "../lib/url";
+---
+
+<Base title="Not found — DevHQ">
+  <section class="page nf">
+    <p class="eyebrow">404</p>
+    <h1>This path does not exist.</h1>
+    <p class="muted">The page was moved, or never was. Return to known ground.</p>
+    <div class="nf-actions">
+      <a class="btn btn-primary" href={url("/")}>Home</a>
+      <a class="btn btn-ghost" href={url("/docs/getting-started")}>Docs</a>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .nf {
+    padding: 140px 0 160px;
+    max-width: 540px;
+  }
+  .nf h1 {
+    font-size: clamp(28px, 5vw, 40px);
+    margin: 14px 0 12px;
+  }
+  .nf-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 28px;
+  }
+</style>

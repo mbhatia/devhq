@@ -1,0 +1,232 @@
+---
+import Base from "./Base.astro";
+import { url } from "../lib/url";
+import { docsNav } from "../lib/docs";
+
+interface Props {
+  frontmatter?: { title?: string; description?: string };
+  title?: string;
+  description?: string;
+}
+const fm = Astro.props.frontmatter ?? {};
+const title = fm.title ?? Astro.props.title ?? "Docs";
+const description = fm.description ?? Astro.props.description;
+
+// Resolve the active page from the current path.
+const current = Astro.url.pathname.replace(/\/$/, "").split("/").pop();
+const idx = docsNav.findIndex((d) => d.slug === current);
+const prev = idx > 0 ? docsNav[idx - 1] : null;
+const next = idx >= 0 && idx < docsNav.length - 1 ? docsNav[idx + 1] : null;
+---
+
+<Base title={`${title} — DevHQ docs`} description={description}>
+  <div class="page docs">
+    <aside class="docs-side">
+      <span class="docs-side-head mono">Documentation</span>
+      <nav>
+        {docsNav.map((d) => (
+          <a
+            href={url(`/docs/${d.slug}`)}
+            class={d.slug === current ? "active" : ""}
+          >
+            {d.title}
+          </a>
+        ))}
+      </nav>
+    </aside>
+
+    <article class="docs-body">
+      <slot />
+      <nav class="docs-pager">
+        {prev ? (
+          <a class="pager prev" href={url(`/docs/${prev.slug}`)}>
+            <span class="meta mono">Previous</span>
+            {prev.title}
+          </a>
+        ) : <span />}
+        {next ? (
+          <a class="pager next" href={url(`/docs/${next.slug}`)}>
+            <span class="meta mono">Next</span>
+            {next.title}
+          </a>
+        ) : <span />}
+      </nav>
+    </article>
+  </div>
+</Base>
+
+<style>
+  .docs {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 56px;
+    padding: 48px 0 80px;
+    align-items: start;
+  }
+  .docs-side {
+    position: sticky;
+    top: 84px;
+  }
+  .docs-side-head {
+    display: block;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--faint);
+    margin-bottom: 14px;
+  }
+  .docs-side nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border-left: 1px solid var(--border-soft);
+  }
+  .docs-side nav a {
+    padding: 6px 14px;
+    margin-left: -1px;
+    font-size: 14px;
+    color: var(--muted);
+    border-left: 1px solid transparent;
+  }
+  .docs-side nav a:hover {
+    color: var(--text);
+  }
+  .docs-side nav a.active {
+    color: var(--text);
+    border-left-color: var(--accent);
+    font-weight: 550;
+  }
+
+  /* content */
+  .docs-body :global(h1) {
+    font-size: 34px;
+    margin-bottom: 8px;
+  }
+  .docs-body :global(h2) {
+    font-size: 22px;
+    margin: 38px 0 12px;
+    padding-top: 12px;
+  }
+  .docs-body :global(h3) {
+    font-size: 17px;
+    margin: 26px 0 8px;
+  }
+  .docs-body :global(p),
+  .docs-body :global(li) {
+    color: var(--muted);
+    font-size: 16px;
+  }
+  .docs-body :global(p) {
+    margin: 12px 0;
+  }
+  .docs-body :global(ul),
+  .docs-body :global(ol) {
+    padding-left: 20px;
+  }
+  .docs-body :global(li) {
+    margin: 6px 0;
+  }
+  .docs-body :global(strong) {
+    color: var(--text);
+  }
+  .docs-body :global(a) {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .docs-body :global(pre) {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13.5px;
+    margin: 16px 0;
+  }
+  .docs-body :global(pre code) {
+    background: none;
+    border: none;
+    padding: 0;
+    font-size: inherit;
+  }
+  .docs-body :global(blockquote) {
+    margin: 16px 0;
+    padding: 2px 16px;
+    border-left: 2px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 6px 6px 0;
+  }
+  .docs-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 14px;
+  }
+  .docs-body :global(th),
+  .docs-body :global(td) {
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border-soft);
+    vertical-align: top;
+  }
+  .docs-body :global(th) {
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .docs-body :global(td) {
+    color: var(--muted);
+  }
+
+  .docs-pager {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 56px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border-soft);
+  }
+  .pager {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-weight: 550;
+    min-width: 160px;
+  }
+  .pager:hover {
+    border-color: var(--accent);
+  }
+  .pager.next {
+    text-align: right;
+  }
+  .pager .meta {
+    font-size: 11px;
+  }
+
+  @media (max-width: 820px) {
+    .docs {
+      grid-template-columns: 1fr;
+      gap: 28px;
+    }
+    .docs-side {
+      position: static;
+    }
+    .docs-side nav {
+      flex-flow: row wrap;
+      border-left: 0;
+    }
+    .docs-side nav a {
+      border: 1px solid var(--border-soft);
+      border-radius: 5px;
+      margin-left: 0;
+    }
+    .docs-side nav a.active {
+      border-color: var(--accent);
+    }
+  }
+</style>
