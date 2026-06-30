@@ -92,12 +92,12 @@ local function agent_options(w, a, cmd)
     return {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
       command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote(script) },
-      agent_close_on_exit = "clean_exit",
+      agent_close_on_exit = "never",
     }
   end
   return {
     kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-    command = cmd, shell = true, agent_close_on_exit = "clean_exit",
+    command = cmd, shell = true, agent_close_on_exit = "never",
     env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
   }
 end
@@ -290,8 +290,8 @@ if not rt.events_registered then
   ghostty.on("terminal-exited", function(e)
     local k = e.view and e.view.devhq_agent_key
     if k then
-      local n = node(e.view)
-      if n then n:close_view(core.root_view.root_node, e.view) else e.view:close() end
+      -- local n = node(e.view)
+      -- if n then n:close_view(core.root_view.root_node, e.view) else e.view:close() end
       remove_agent(k)
     end
   end)
