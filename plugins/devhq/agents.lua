@@ -11,11 +11,24 @@ local M = {}
 local rt = core.devhq_agents_runtime or { views = {} }
 core.devhq_agents_runtime = rt
 
+local function shell_quote(value) return '"' .. tostring(value or ""):gsub('"', '\\"') .. '"' end
+
 config.plugins.devhq = config.plugins.devhq or {}
 config.plugins.devhq.agents = config.plugins.devhq.agents or {}
+local codex_start_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO"']]
+local codex_resume_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO" resume']]
+local function codex_cmd(cmd)
+  local quoted = shell_quote(cmd)
+  return [[session="$REPO_ID:${AGENT_ID##*:}"; ]]
+    .. [[ _shpool_with_config() { command -v shpool >/dev/null 2>&1 && [ -f "$HOME/.config/shpool/config.toml" ] && exec shpool -c "$HOME/.config/shpool/config.toml" attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
+    .. [[ _shpool() { command -v shpool >/dev/null 2>&1 && exec shpool attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
+    .. [[ _atch() { command -v atch >/dev/null 2>&1 && exec atch "$session" ]] .. cmd .. [[; }; ]]
+    .. [[ _cmd() { exec ]] .. cmd .. [[; }; ]]
+    .. [[ _shpool_with_config || _shpool || _atch || _cmd ]]
+end
 config.plugins.devhq.agents.codex = common.merge({
-  start = "codex --add-dir $REPO",
-  resume = "codex --add-dir $REPO resume",
+  start = codex_cmd(codex_start_cmd),
+  resume = codex_cmd(codex_resume_cmd),
   icon = "@",
 }, config.plugins.devhq.agents.codex)
 
@@ -33,7 +46,6 @@ end
 local function node(v) return v and core.root_view.root_node:get_node_for_view(v) end
 local function save() if rt.ctx then rt.ctx.save_state() end core.redraw = true end
 local function set_title(v, a) if v then v.title = label(a) end end
-local function shell_quote(value) return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'" end
 local function strip_trailing_separators(path)
   path = tostring(path or "")
   while #path > 1 and (path:sub(-1) == "/" or path:sub(-1) == "\\" or path:sub(-1) == PATHSEP) do
@@ -80,12 +92,12 @@ local function agent_options(w, a, cmd)
     return {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
       command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote(script) },
-      agent_close_on_exit = "clean_exit",
+      agent_close_on_exit = "never",
     }
   end
   return {
     kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-    command = cmd, shell = true, agent_close_on_exit = "clean_exit",
+    command = cmd, shell = true, agent_close_on_exit = "never",
     env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
   }
 end
@@ -278,8 +290,8 @@ if not rt.events_registered then
   ghostty.on("terminal-exited", function(e)
     local k = e.view and e.view.devhq_agent_key
     if k then
-      local n = node(e.view)
-      if n then n:close_view(core.root_view.root_node, e.view) else e.view:close() end
+      -- local n = node(e.view)
+      -- if n then n:close_view(core.root_view.root_node, e.view) else e.view:close() end
       remove_agent(k)
     end
   end)
