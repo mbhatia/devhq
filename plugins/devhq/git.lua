@@ -193,14 +193,35 @@ local function merge_base_refs(path, left, right, yielding)
   end
 end
 
-local function upstream_base(path, yielding)
+local function configured_upstream_ref(path, yielding)
   local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
+  if code == 0 and trim(output) ~= "" then return trim(output) end
+end
+
+local function git_dir(path, yielding)
+  local output, code = run(path, { "rev-parse", "--path-format=absolute", "--git-dir" }, yielding)
   if code ~= 0 or trim(output) == "" then return end
-  local ref = trim(output)
-  if rev_exists(path, ref, yielding) then
-    local base = merge_base(path, ref, yielding)
-    if base then return base, ref end
-  end
+  return trim(output)
+end
+
+local function stored_parent_ref(path, yielding)
+  local dir = git_dir(path, yielding)
+  if not dir then return end
+  -- Detached remote mirrors have no branch upstream; sync stores it per worktree.
+  local file = io.open(join_path(dir, "devhq-parent-ref"), "r")
+  if not file then return end
+  local ref = trim(file:read("*a"))
+  file:close()
+  if ref ~= "" then return ref end
+end
+
+local function store_parent_ref(path, ref, yielding)
+  local dir = git_dir(path, yielding)
+  if not dir then return end
+  local file = io.open(join_path(dir, "devhq-parent-ref"), "w")
+  if not file then return end
+  file:write(trim(ref), "\n")
+  file:close()
 end
 
 function M.is_repo(path)
@@ -373,6 +394,70 @@ local function ensure_merge_base(path, left, right, yielding)
   return merge_base_refs(path, left, right, yielding) ~= nil
 end
 
+local parent_branches = { "main", "develop", "master" }
+
+local function add_candidate(candidates, seen, ref)
+  ref = trim(ref)
+  if ref ~= "" and not seen[ref] then
+    seen[ref] = true
+    candidates[#candidates + 1] = ref
+  end
+end
+
+local function add_remote_parent_candidates(candidates, seen, remote)
+  if not remote or remote == "" then return end
+  for _, branch in ipairs(parent_branches) do
+    add_candidate(candidates, seen, remote .. "/" .. branch)
+  end
+end
+
+local function remote_refs_pointing_at_head(path, yielding)
+  local output, code = run(path, { "for-each-ref", "--format=%(refname:short)", "--points-at", "HEAD", "refs/remotes" }, yielding)
+  if code ~= 0 then return {} end
+  local refs = {}
+  for _, ref in ipairs(split_lines(output)) do
+    if ref ~= "" and not ref:match("/HEAD$") then refs[#refs + 1] = ref end
+  end
+  return refs
+end
+
+local function parent_ref_candidates(path, upstream, stored, head_refs, yielding)
+  local candidates, seen = {}, {}
+  add_candidate(candidates, seen, upstream)
+  add_candidate(candidates, seen, stored)
+  add_remote_parent_candidates(candidates, seen, "origin")
+  for _, head_ref in ipairs(head_refs or remote_refs_pointing_at_head(path, yielding)) do
+    local remote = remote_ref_parts(head_ref)
+    add_remote_parent_candidates(candidates, seen, remote)
+  end
+  for _, branch in ipairs(parent_branches) do
+    add_candidate(candidates, seen, branch)
+  end
+  return candidates
+end
+
+local function base_for_ref(path, ref, head_refs, yielding)
+  if not rev_exists(path, ref, yielding) then return end
+  local base = merge_base(path, ref, yielding)
+  if base then return base end
+  for _, head_ref in ipairs(head_refs or {}) do
+    if ensure_merge_base(path, head_ref, ref, yielding) then
+      base = merge_base(path, ref, yielding)
+      if base then return base end
+    end
+  end
+end
+
+local function parent_base(path, yielding)
+  local upstream = configured_upstream_ref(path, yielding)
+  local stored = stored_parent_ref(path, yielding)
+  local head_refs = remote_refs_pointing_at_head(path, yielding)
+  for _, ref in ipairs(parent_ref_candidates(path, upstream, stored, head_refs, yielding)) do
+    local base = base_for_ref(path, ref, head_refs, yielding)
+    if base then return base, ref end
+  end
+end
+
 local function worktree_ref(repo, wt)
   if wt.branch_name and wt.branch_name ~= "" then return tostring(repo.server) .. "/" .. wt.branch_name end
   return wt.head
@@ -440,25 +525,29 @@ function M.sync_remote_repo(repo, yielding)
   for _, wt in ipairs(M.worktrees(repo.cache_path)) do existing[wt.path] = true end
   for _, wt in ipairs(mapped) do
     local ref = worktree_ref(repo, wt)
-    if not ensure_merge_base(repo.cache_path, ref, upstreams[wt.branch_name], yielding) then
+    local upstream = upstreams[wt.branch_name]
+    if not ensure_merge_base(repo.cache_path, ref, upstream, yielding) then
       return false, "Could not fetch merge-base history for " .. tostring(ref) ..
-        " and " .. tostring(upstreams[wt.branch_name])
+        " and " .. tostring(upstream)
     end
     if wt.path == repo.cache_path then
       for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
         output, code = run_command(command, wt.path, yielding)
         if code ~= 0 then return false, output end
       end
+      store_parent_ref(wt.path, upstream, yielding)
     elseif existing[wt.path] then
       for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
         output, code = run_command(command, wt.path, yielding)
         if code ~= 0 then return false, output end
       end
+      store_parent_ref(wt.path, upstream, yielding)
     else
       ok, err = ensure_dir(common.dirname(wt.path))
       if not ok then return false, err end
       output, code = run(repo.cache_path, M.remote_mirror_worktree_add_args(wt.path, ref), yielding)
       if code ~= 0 then return false, output end
+      store_parent_ref(wt.path, upstream, yielding)
     end
   end
 
@@ -506,23 +595,7 @@ function M.remove_worktree(path, worktree_path)
 end
 
 function M.parent_commit(path, yielding)
-  local output, code = run(path, { "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}" }, yielding)
-  local candidates = {}
-  if code == 0 and trim(output) ~= "" then
-    candidates[#candidates + 1] = trim(output)
-  end
-  for _, ref in ipairs({ "origin/main", "origin/develop", "origin/master", "main", "develop", "master" }) do
-    candidates[#candidates + 1] = ref
-  end
-
-  for _, ref in ipairs(candidates) do
-    if rev_exists(path, ref, yielding) then
-      local base = merge_base(path, ref, yielding)
-      if base then
-        return base, ref
-      end
-    end
-  end
+  return parent_base(path, yielding)
 end
 
 function M.diff_against_parent(path, file, yielding, mode)
@@ -589,7 +662,7 @@ function M.tree_status(path, yielding)
   output, code = run(path, { "diff", "--cached", "--numstat", "--" }, yielding)
   if code == 0 then parse_numstat(result, output, "staged") end
 
-  local parent, ref = upstream_base(path, yielding)
+  local parent, ref = parent_base(path, yielding)
   result.upstream_ref = ref
   if parent then
     output, code = run(path, { "diff", "--name-status", "--no-renames", parent, "HEAD", "--" }, yielding)
