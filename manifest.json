@@ -11,17 +11,47 @@
     },
     {
       "id": "web",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "mod_version": "3",
       "type": "plugin",
       "remote": "https://github.com/mbhatia/lite-xl-web.git:main"
     },
     {
       "id": "web_lxl",
-      "version": "0.1.4",
+      "version": "0.1.5",
       "mod_version": "3",
       "type": "library",
       "remote": "https://github.com/mbhatia/lite-xl-web.git:main"
+    },
+    {
+      "id": "martian_mono_nerd_font",
+      "version": "3.4.0",
+      "mod_version": "3",
+      "type": "font",
+      "name": "Martian Mono Nerd Font",
+      "description": "Martian Mono patched with Nerd Font glyphs.",
+      "files": [
+        {
+          "url": "https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/MartianMono.zip",
+          "checksum": "76efe59051015cd688d027995c0bca6f365c75438025ba065ac9c744e82c8095",
+          "path": "MartianMono.zip"
+        }
+      ]
+    },
+    {
+      "id": "fontawesome_free_desktop",
+      "version": "7.3.0",
+      "mod_version": "3",
+      "type": "font",
+      "name": "Font Awesome Free Desktop",
+      "description": "Font Awesome Free desktop fonts and icon assets.",
+      "files": [
+        {
+          "url": "https://use.fontawesome.com/releases/v7.3.0/fontawesome-free-7.3.0-desktop.zip",
+          "checksum": "719c61d1b2b595d166af27dac1fdce1391726b6eed7986076aa13b232976cfcd",
+          "path": "fontawesome-free-7.3.0-desktop.zip"
+        }
+      ]
     },
     {
       "id": "devhq",
@@ -32,9 +62,11 @@
       "description": "Repository and worktree sidebar for Lite XL.",
       "path": "plugins/devhq",
       "dependencies": {
+        "fontawesome_free_desktop": {},
         "generic_treeview": {},
+        "martian_mono_nerd_font": {},
         "web": {
-          "version": ">=0.1.4"
+          "version": ">=0.1.5"
         }
       }
     }
