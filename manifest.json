@@ -24,6 +24,27 @@
       "remote": "https://github.com/mbhatia/lite-xl-web.git:main"
     },
     {
+      "id": "ghostty",
+      "version": "0.2.0",
+      "mod_version": "3",
+      "type": "plugin",
+      "remote": "https://github.com/mbhatia/lite-xl-ghostty.git:main"
+    },
+    {
+      "id": "ghostty_lxl",
+      "version": "0.2.0",
+      "mod_version": "3",
+      "type": "library",
+      "remote": "https://github.com/mbhatia/lite-xl-ghostty.git:main"
+    },
+    {
+      "id": "widget",
+      "version": "0.2.1",
+      "mod_version": "3",
+      "type": "library",
+      "remote": "https://github.com/lite-xl/lite-xl-widgets:61789bdc87d52ba7838927af9aa2671efdcea185"
+    },
+    {
       "id": "martian_mono_nerd_font",
       "version": "3.4.0",
       "mod_version": "3",
@@ -64,15 +85,21 @@
       "dependencies": {
         "fontawesome_free_desktop": {},
         "generic_treeview": {},
+        "ghostty": {
+          "version": ">=0.2.0"
+        },
         "martian_mono_nerd_font": {},
         "web": {
           "version": ">=0.1.5"
-        }
+        },
+        "widget": {}
       }
     }
   ],
   "lite-xls": [],
   "remotes": [
+    "https://github.com/lite-xl/lite-xl-widgets:61789bdc87d52ba7838927af9aa2671efdcea185",
+    "https://github.com/mbhatia/lite-xl-ghostty.git:main",
     "https://github.com/mbhatia/lite-xl-web.git:main"
   ]
 }
