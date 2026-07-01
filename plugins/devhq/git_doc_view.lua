@@ -7,6 +7,7 @@ local DocView = require "core.docview"
 local style = require "core.style"
 local renderer = require "renderer"
 local git = require "plugins.devhq.git"
+local file_treeview = require "plugins.devhq.file_treeview"
 
 local M = {}
 core.devhq_git_doc_view = M
@@ -129,7 +130,8 @@ local function current_key(view)
   end
   local info = system.get_file_info(file) or {}
   local stamp = tostring(info.modified or "") .. ":" .. tostring(info.size or "")
-  return root .. "\0" .. file .. "\0" .. stamp, root, file
+  local mode = file_treeview.current_mode()
+  return root .. "\0" .. file .. "\0" .. stamp .. "\0" .. mode, root, file, mode
 end
 
 local function clear(view)
@@ -146,7 +148,7 @@ function M.refresh(view)
     clear(view)
     return
   end
-  local key, root, file = current_key(view)
+  local key, root, file, mode = current_key(view)
   if not key then
     clear(view)
     return
@@ -161,7 +163,7 @@ function M.refresh(view)
   view.devhq_diff_token = token
 
   core.add_thread(function()
-    local raw = git.diff_against_parent(root, file, true)
+    local raw = git.diff_against_parent(root, file, true, mode)
     if view.devhq_diff_token ~= token then
       return
     end

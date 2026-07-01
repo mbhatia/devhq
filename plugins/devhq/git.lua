@@ -525,16 +525,28 @@ function M.parent_commit(path, yielding)
   end
 end
 
-function M.diff_against_parent(path, file, yielding)
+function M.diff_against_parent(path, file, yielding, mode)
+  local rel = common.relative_path(path, file)
+  local args
+  if mode == "staged" then
+    args = { "diff", "--cached", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C", "--", rel }
+  elseif mode == "uncommitted" then
+    args = { "diff", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C", "HEAD", "--", rel }
+  end
+  if args then
+    local output, code = run(path, args, yielding)
+    return code == 0 and output or nil, code ~= 0 and output or nil
+  end
+
   local parent, ref = M.parent_commit(path, yielding)
   if not parent then
     return nil, "No parent commit found"
   end
 
-  local rel = common.relative_path(path, file)
-  local output, code = run(path, {
-    "diff", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C", parent, "--", rel
-  }, yielding)
+  args = { "diff", "--no-color", "--no-ext-diff", "--unified=3", "-M", "-C", parent }
+  if mode == "head" then args[#args + 1] = "HEAD" end
+  table.move({ "--", rel }, 1, 2, #args + 1, args)
+  local output, code = run(path, args, yielding)
   if code ~= 0 then
     return nil, output
   end

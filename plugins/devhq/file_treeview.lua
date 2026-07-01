@@ -30,6 +30,8 @@ local tree_modes = {
   { mode = "full", label = "Full", tooltip = "Show the full tree" },
 }
 
+function M.current_mode() return project_tree.mode end
+
 local function get_depth(filename)
   local n = 1
   for _ in filename:gmatch(PATHSEP) do n = n + 1 end
