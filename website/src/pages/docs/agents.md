@@ -23,6 +23,7 @@ A profile defines the command an agent runs. While this would typically be your 
 it could be any long-running process you want.
 
 `$REPO` resolves to the parent repo, `$PWD` is the active worktree directory.
+DevHQ also sets `$REPO_ID`, `$AGENT_ID`, and `$THREAD_ID` when known.
 
 Default ships with a `codex` profile, you can easily add more profiles in Lite XL
 settings.
@@ -32,8 +33,20 @@ local claude = "/Users/manujbhatia/.local/bin/claude"
 config.plugins.devhq.agents["claude"] = {
   start = claude .. " --add-dir $REPO",
   resume = claude .. " --add-dir $REPO --resume",
+  resume_thread = claude .. " --resume $THREAD_ID",
+  thread = {
+    input = "/status\n",
+    pattern = "Session ID:%s*([%w%-]+)",
+  },
 }
 ```
+
+`thread.input` is sent once after a newly opened agent terminal starts, and
+`thread.pattern` is matched against the visible terminal output. The first match
+is stored on the active agent entry as `thread_id` and persisted in DevHQ state.
+On the next editor restart, DevHQ uses `resume_thread` instead of `resume` when
+that stored id exists. The input can include `$AGENT_ID`, `$AGENT_NAME`, and
+`$THREAD_ID`, so profiles can also issue commands like `/rename $AGENT_ID`.
 
 ## Attention state
 
