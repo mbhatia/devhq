@@ -26,10 +26,26 @@ local function codex_cmd(cmd)
     .. [[ _cmd() { exec ]] .. cmd .. [[; }; ]]
     .. [[ _shpool_with_config || _shpool || _atch || _cmd ]]
 end
+local function fontawesome_icon_font()
+  local font_path = USERDIR .. PATHSEP .. "fonts" .. PATHSEP
+    .. "fontawesome_free_desktop" .. PATHSEP
+    .. "fontawesome-free-7.3.0-desktop" .. PATHSEP
+    .. "otfs" .. PATHSEP
+    .. "Font Awesome 7 Free-Solid-900.otf"
+  if not system.get_file_info(font_path) then
+    return style.icon_font or style.font
+  end
+
+  local base = style.icon_font or style.font
+  local size = base and base.get_size and base:get_size() or (14 * SCALE)
+  local ok, font = pcall(renderer.font.load, font_path, size)
+  return ok and font or base
+end
 config.plugins.devhq.agents.codex = common.merge({
   start = codex_cmd(codex_start_cmd),
   resume = codex_cmd(codex_resume_cmd),
-  icon = "@",
+  icon = "\u{e7cf}",
+  icon_font = fontawesome_icon_font(),
 }, config.plugins.devhq.agents.codex)
 
 local function profiles() return config.plugins.devhq.agents or {} end

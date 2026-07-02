@@ -4,6 +4,7 @@ local core = require "core"
 local command = require "core.command"
 local common = require "core.common"
 local config = require "core.config"
+local style = require "core.style"
 local context_menu = require "plugins.contextmenu"
 local MessageBox = require "libraries.widget.messagebox"
 local agents = require "plugins.devhq.agents"
@@ -19,6 +20,7 @@ local default_treeview = require "plugins.treeview"
 local state_filename = USERDIR .. PATHSEP .. "devhq.lua"
 
 config.plugins.devhq = common.merge({
+  code_font = true,
   worktree_root = ".worktrees",
   webview_open_html_files = true,
   webview_open_localhost_urls = true,
@@ -27,11 +29,30 @@ config.plugins.devhq = common.merge({
 
 config.plugins.devhq.config_spec = config.plugins.devhq.config_spec or {
   name = "DevHQ",
+  { label = "Use DevHQ Code Font", path = "code_font", type = "TOGGLE", default = true },
   { label = "Worktree Root", path = "worktree_root", type = "STRING", default = ".worktrees" },
   { label = "Open HTML Files In Webview", path = "webview_open_html_files", type = "TOGGLE", default = true },
   { label = "Open Localhost URLs In Webview", path = "webview_open_localhost_urls", type = "TOGGLE", default = true },
   { label = "Public URL Action", path = "webview_public_url_action", type = "STRING", default = "prompt" },
 }
+
+local function setup_code_font()
+  if config.plugins.devhq.code_font == false then return end
+
+  local font_path = USERDIR .. PATHSEP .. "fonts" .. PATHSEP
+    .. "martian_mono_nerd_font" .. PATHSEP
+    .. "MartianMonoNerdFontMono-Regular.ttf"
+  if not system.get_file_info(font_path) then return end
+
+  local size = style.code_font and style.code_font.get_size and style.code_font:get_size()
+    or (14 * SCALE)
+  local ok, font = pcall(renderer.font.load, font_path, size)
+  if ok and font then
+    style.code_font = font
+  end
+end
+
+setup_code_font()
 
 require "plugins.devhq.webview_links".setup()
 

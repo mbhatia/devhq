@@ -15,9 +15,12 @@ editor and the plugin together. macOS and Linux, `x86_64` and `aarch64`.
 curl -fsSL https://raw.githubusercontent.com/mbhatia/devhq/main/install.sh | sh
 ```
 
-The script downloads the Lite XL Package Manager (`lpm`) to a temporary
-directory, installs Lite XL, adds the DevHQ package repository, and installs the
-`devhq` package.
+On macOS the script downloads the official Lite XL DMG and installs the app into
+`/Applications`. It also downloads the Lite XL Package Manager (`lpm`) to a
+temporary directory, adds the DevHQ package repository, and installs the `devhq`
+package. On Linux, `lpm` still installs Lite XL.
+
+Run the same command again to upgrade or refresh an existing DevHQ install.
 
 <!-- To install from a fork:
 
@@ -28,6 +31,9 @@ DEVHQ_REPOSITORY_URL=https://github.com/example/devhq sh ./install.sh
 
 ## Manual install
 
+On macOS, install [Lite XL](https://github.com/lite-xl/lite-xl/releases/latest)
+from the official DMG.
+
 Install `lpm`:
 
 ```sh
@@ -37,10 +43,13 @@ wget https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest/
 Install Lite XL and DevHQ:
 
 ```sh
-./lpm install lite-xl
 ./lpm repo add https://github.com/mbhatia/devhq
-./lpm install devhq
+./lpm repo update https://github.com/mbhatia/devhq
+./lpm install devhq --assume-yes
+./lpm reinstall devhq --assume-yes
 ```
+
+On Linux, install Lite XL with `./lpm install lite-xl` before installing DevHQ.
 
 Optional — install `shpool` so agent sessions survive editor restarts:
 
