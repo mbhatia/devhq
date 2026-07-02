@@ -606,15 +606,19 @@ function M.sync_remote_repo(repo, yielding)
   return true
 end
 
-function M.common_dir(path)
-  local output, code = run(path, { "rev-parse", "--path-format=absolute", "--git-common-dir" })
+function M.git_dir(path, yielding)
+  return git_dir(path, yielding)
+end
+
+function M.common_dir(path, yielding)
+  local output, code = run(path, { "rev-parse", "--path-format=absolute", "--git-common-dir" }, yielding)
   if code ~= 0 then return end
   output = trim(output)
   return output ~= "" and output or nil
 end
 
-function M.current_branch(path)
-  local output, code = run(path, { "rev-parse", "--abbrev-ref", "HEAD" })
+function M.current_branch(path, yielding)
+  local output, code = run(path, { "rev-parse", "--abbrev-ref", "HEAD" }, yielding)
   if code ~= 0 then return "HEAD" end
   output = trim(output)
   return output ~= "" and output or "HEAD"

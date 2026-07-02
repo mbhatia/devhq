@@ -23,6 +23,7 @@ local function cache_dir()
 end
 
 local cache_root = cache_dir() .. PATHSEP .. "devhq-git-history"
+local history_watch_interval = 1
 local state = {
   view = nil,
   original_view = nil,
@@ -35,6 +36,8 @@ local state = {
   pending_files = {},
   commit_logs = {},
   pending_commit_logs = {},
+  history_watch = nil,
+  history_watching = false,
 }
 local ephemeral_view
 local attach_context
@@ -42,6 +45,11 @@ local attach_context
 local function safe_part(text)
   text = tostring(text or ""):gsub("[/\\:]", "_")
   return text:gsub("[^%w%._%-]", "_")
+end
+
+local function join_path(path, name)
+  if path:sub(-1) == PATHSEP then return path .. name end
+  return path .. PATHSEP .. name
 end
 
 local function ensure_dir(path)
@@ -146,6 +154,7 @@ local function reset_history(path)
   state.pending_files = {}
   state.commit_logs = {}
   state.pending_commit_logs = {}
+  state.history_watch = nil
 end
 
 local function load_history(force)
@@ -167,6 +176,97 @@ local function load_history(force)
       state.commits = { { hash = "error", short_hash = "error", subject = err or "No git history" } }
     end
     core.redraw = true
+  end)
+end
+
+local function file_stamp(entry)
+  local path = type(entry) == "table" and entry.path or entry
+  if type(entry) == "table" and entry.content then
+    local fp = io.open(path, "rb")
+    if fp then
+      local text = fp:read("*a")
+      fp:close()
+      return "content:" .. tostring(text or "")
+    end
+  end
+  local info = path and system.get_file_info(path)
+  if not info then return false end
+  return tostring(info.modified or "") .. ":" .. tostring(info.size or "")
+end
+
+local function snapshot_paths(paths)
+  local snapshot = {}
+  for _, entry in ipairs(paths or {}) do
+    local path = type(entry) == "table" and entry.path or entry
+    snapshot[path] = file_stamp(entry)
+  end
+  return snapshot
+end
+
+local function snapshots_equal(a, b)
+  for path, value in pairs(a or {}) do
+    if not b or b[path] ~= value then return false end
+  end
+  for path in pairs(b or {}) do
+    if not a or a[path] == nil then return false end
+  end
+  return true
+end
+
+local function build_history_watch(path)
+  local git_dir = git.git_dir(path, true)
+  if not git_dir then return { path = path, paths = {}, snapshot = {} } end
+
+  local paths = { { path = join_path(git_dir, "HEAD"), content = true } }
+  local common_dir = git.common_dir(path, true)
+  if common_dir then
+    paths[#paths + 1] = join_path(common_dir, "packed-refs")
+    local branch = git.current_branch(path, true)
+    if branch and branch ~= "HEAD" then
+      paths[#paths + 1] = {
+        path = join_path(common_dir, "refs" .. PATHSEP .. "heads" .. PATHSEP .. branch),
+        content = true,
+      }
+    end
+  end
+
+  return {
+    path = path,
+    paths = paths,
+    snapshot = snapshot_paths(paths),
+  }
+end
+
+local function refresh_history(path)
+  if state.repo_path ~= path then return end
+  state.files = {}
+  state.commit_logs = {}
+  state.pending_commit_logs = {}
+  load_history(true)
+  core.redraw = true
+end
+
+local function start_history_watch()
+  if state.history_watching then return end
+  state.history_watching = true
+  core.add_thread(function()
+    while state.view do
+      local path = repo_path()
+      if not path then
+        state.history_watch = nil
+      elseif not state.history_watch or state.history_watch.path ~= path then
+        state.history_watch = build_history_watch(path)
+      else
+        local snapshot = snapshot_paths(state.history_watch.paths)
+        if not snapshots_equal(state.history_watch.snapshot, snapshot) then
+          state.history_watch = build_history_watch(path)
+          refresh_history(path)
+        end
+      end
+      coroutine.yield(history_watch_interval)
+    end
+    state.history_watch = nil
+    state.history_watching = false
   end)
 end
 
@@ -434,6 +534,7 @@ function M.toggle()
   view._devhq_git_history = true
   state.view = view
   state.original_view = default_treeview
+  start_history_watch()
   if not replace_view(default_treeview, view) then
     local node = core.root_view.root_node:get_node_for_view(default_treeview)
     view.node = node:split("left", view, { x = true }, true)
