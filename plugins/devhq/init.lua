@@ -12,6 +12,7 @@ local comments = require "plugins.devhq.comments"
 local file_treeview = require "plugins.devhq.file_treeview"
 local git = require "plugins.devhq.git"
 local git_doc_view = require "plugins.devhq.git_doc_view"
+local git_history_pane = require "plugins.devhq.git_history_pane"
 local ghostty = require "plugins.ghostty"
 local tree_model = require "plugins.devhq.tree_model"
 local TreeView = require "libraries.generic_treeview"
@@ -620,6 +621,10 @@ command.add(nil, {
 
   ["devhq:toggle-git-diff-overlay"] = function()
     git_doc_view.toggle()
+  end,
+
+  ["devhq:toggle-git-history"] = function()
+    git_history_pane.toggle()
   end,
 })
 
