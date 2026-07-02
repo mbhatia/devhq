@@ -31,7 +31,7 @@ local function fontawesome_icon_font()
     .. "fontawesome_free_desktop" .. PATHSEP
     .. "fontawesome-free-7.3.0-desktop" .. PATHSEP
     .. "otfs" .. PATHSEP
-    .. "Font Awesome 7 Free-Solid-900.otf"
+    .. "Font Awesome 7 Brands-Regular-400.otf"
   if not system.get_file_info(font_path) then
     return style.icon_font or style.font
   end
