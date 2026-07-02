@@ -25,6 +25,16 @@ local function call(value, ...)
   return value
 end
 
+local function split_lines(text)
+  local lines = {}
+  text = tostring(text or ""):gsub("\r\n", "\n")
+  if text:sub(-1) ~= "\n" then text = text .. "\n" end
+  for line in text:gmatch("(.-)\n") do
+    lines[#lines + 1] = line
+  end
+  return #lines > 0 and lines or { "" }
+end
+
 local function sorted_children(children)
   local list = {}
   if type(children) ~= "table" then
@@ -332,7 +342,12 @@ end
 function TreeView:draw_tooltip()
   local node = self.hovered_item and self.hovered_item.node
   local text = call(node and node.tooltip, node) or self:get_node_label(node)
-  local w, h = style.font:get_width(text), style.font:get_height(text)
+  local lines = split_lines(text)
+  local line_h = style.font:get_height()
+  local w, h = 0, line_h * #lines
+  for _, line in ipairs(lines) do
+    w = math.max(w, style.font:get_width(line))
+  end
 
   local x, y = self.tooltip.x + tooltip_offset, self.tooltip.y + tooltip_offset
   w, h = w + style.padding.x, h + style.padding.y
@@ -345,7 +360,12 @@ function TreeView:draw_tooltip()
   local bw, bh = w + 2 * tooltip_border, h + 2 * tooltip_border
   renderer.draw_rect(bx, by, bw, bh, replace_alpha(style.text, self.tooltip.alpha))
   renderer.draw_rect(x, y, w, h, replace_alpha(style.background2, self.tooltip.alpha))
-  common.draw_text(style.font, replace_alpha(style.text, self.tooltip.alpha), text, "center", x, y, w, h)
+  local color = replace_alpha(style.text, self.tooltip.alpha)
+  local text_x = x + style.padding.x / 2
+  local text_y = y + style.padding.y / 2
+  for i, line in ipairs(lines) do
+    renderer.draw_text(style.font, line, text_x, text_y + (i - 1) * line_h, color)
+  end
 end
 
 function TreeView:get_item_icon(item, active, hovered)
