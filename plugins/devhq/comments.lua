@@ -9,12 +9,14 @@ local DocView = require "core.docview"
 local renderer = require "renderer"
 local git = require "plugins.devhq.git"
 local agents = require "plugins.devhq.agents"
+local TreeView = require "libraries.generic_treeview"
 
 local M = {}
 core.devhq_comments = M
 
-local comments, loaded_worktree, state_file = {}, nil, nil
+local comments, loaded_worktree, state_file, loaded_mtime = {}, nil, nil, nil
 local normalize_thread
+local refresh_review_sidebar, show_review_sidebar
 
 style.devhq_comments = common.merge({
   marker = style.warn or { common.color "#d79921" },
@@ -166,10 +168,16 @@ local function comments_file_for(path)
   return dir .. PATHSEP .. common.basename(path) .. "-devhq-comments-" .. tostring(id) .. ".jsonl"
 end
 
+local function file_mtime(path)
+  local info = path and system.get_file_info(path)
+  return info and info.modified or nil
+end
+
 local function load(path)
   comments = {}
   loaded_worktree = path
   state_file = comments_file_for(path)
+  loaded_mtime = file_mtime(state_file)
   local fp = io.open(state_file, "r")
   if not fp then return end
   for line in fp:lines() do
@@ -190,6 +198,7 @@ local function save()
   fp:write(encode({ type = "meta", worktree = loaded_worktree }), "\n")
   for _, item in ipairs(comments) do fp:write(encode(item), "\n") end
   fp:close()
+  loaded_mtime = file_mtime(state_file)
   core.redraw = true
 end
 
@@ -472,6 +481,7 @@ function M.add_comment()
   }
   comments[#comments + 1] = item
   save()
+  show_review_sidebar()
   open_overlay(view, item, true)
 end
 
@@ -486,16 +496,29 @@ local function postable_threads()
   return out
 end
 
+local function cli_command()
+  local script = USERDIR .. PATHSEP .. "devhq"
+  local prefix = string.format('DEVHQ_USERDIR=%q ', USERDIR)
+  if system.get_file_info(script) then
+    return prefix .. string.format('%q', script)
+  end
+  return prefix .. "devhq"
+end
+
 local function blob_for(items)
   local out = { "Review comments for " .. tostring(worktree()), "" }
   for _, item in ipairs(items) do
-    out[#out + 1] = string.format("%s:%d:%d-%d:%d [%s]", item.file,
+    out[#out + 1] = string.format("comment %s", item.id)
+    out[#out + 1] = string.format("  %s:%d:%d-%d:%d [%s]", item.file,
       item.range.start.line, item.range.start.col, item.range["end"].line, item.range["end"].col, item.commit)
     for _, message in ipairs(normalize_thread(item).messages) do
       out[#out + 1] = "  " .. author_label(message.author) .. ": " .. (message.body or "")
     end
     out[#out + 1] = ""
   end
+  out[#out + 1] = "To respond to a comment, run the DevHQ review CLI with the comment id shown above:"
+  out[#out + 1] = "  " .. cli_command() .. ' review reply <comment-id> --message "your reply"'
+  out[#out + 1] = "This appends your reply to that thread; the reviewer sees it in the DevHQ review sidebar."
   return table.concat(out, "\n")
 end
 
@@ -553,13 +576,283 @@ function M.resolve_comment()
   })
 end
 
+-- Review sidebar -------------------------------------------------------------
+
+local review_sidebar
+
+local function jump_to(view, line, col)
+  if not (view and view.doc) then return end
+  line = common.clamp(line or 1, 1, #view.doc.lines)
+  col = math.max(1, col or 1)
+  view.doc:set_selection(line, col, line, col)
+  view:scroll_to_line(line, false, true)
+end
+
+local function focus_view(view)
+  local node = view and core.root_view.root_node:get_node_for_view(view)
+  if node then node:set_active_view(view) end
+end
+
+local function find_version_view(name)
+  for _, view in ipairs(core.root_view.root_node:get_children()) do
+    if view.doc and not view.doc.abs_filename and view.doc.filename == name then
+      return view
+    end
+  end
+end
+
+local function open_version(root, commit, rel, line, col)
+  local name = commit:sub(1, 8) .. ":" .. rel
+  local existing = find_version_view(name)
+  if existing then
+    focus_view(existing)
+    jump_to(existing, line, col)
+    return existing
+  end
+  local content, err = git.file_at_commit(root, commit, rel)
+  if not content then
+    return core.error("Cannot load %s at %s: %s", rel, commit:sub(1, 8), tostring(err or "git failed"))
+  end
+  local doc = core.open_doc()
+  doc:text_input(content)
+  doc.filename = name
+  doc.abs_filename = nil
+  pcall(function() doc:reset_syntax() end)
+  pcall(function() doc:clean() end)
+  local view = core.root_view:open_doc(doc)
+  jump_to(view, line, col)
+  return view
+end
+
+local function open_thread(item)
+  local root = item.worktree or worktree()
+  if not root then return core.error("No worktree for comment") end
+  local rel = item.file
+  local line = item.range and item.range.start and item.range.start.line or 1
+  local col = item.range and item.range.start and item.range.start.col or 1
+  local commit = item.commit
+  local head = git.head_commit(root)
+  if commit and commit ~= "uncommitted" and head and commit ~= head then
+    open_version(root, commit, rel, line, col)
+  else
+    local abs = root:sub(-1) == PATHSEP and root .. rel or root .. PATHSEP .. rel
+    local view = core.root_view:open_doc(core.open_doc(abs))
+    jump_to(view, line, col)
+  end
+end
+
+local function collapse(text)
+  return (tostring(text or ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+end
+
+local function review_header(item)
+  local messages = normalize_thread(item).messages
+  local extra = #messages > 1 and string.format("  (%d)", #messages) or ""
+  return string.format("%s:%d%s", common.basename(item.file), item.range.start.line, extra)
+end
+
+local function review_tooltip(item)
+  local last = normalize_thread(item).messages
+  last = last[#last]
+  local who = last and author_label(last.author) or "you"
+  return string.format("%s:%d [%s] last from %s", item.file, item.range.start.line, item.state, who)
+end
+
+local function review_roots()
+  ensure_loaded()
+  local items = {}
+  for _, item in ipairs(comments) do
+    if item.worktree == worktree() then items[#items + 1] = item end
+  end
+  table.sort(items, function(a, b)
+    if a.file ~= b.file then return a.file < b.file end
+    return a.range.start.line < b.range.start.line
+  end)
+  local nodes = {}
+  for i, item in ipairs(items) do
+    nodes[i] = {
+      id = item.id,
+      label = review_header(item),
+      header = review_header(item),
+      body = collapse(first_message(item).body),
+      dim = item.state == "resolved",
+      kind = "comment",
+      order = i,
+      tooltip = review_tooltip(item),
+      icon = function(_, active, hovered)
+        local color = (active or hovered) and style.accent or marker_color(item)
+        return "f", style.icon_font, color
+      end,
+      color = function(_, active, hovered)
+        if active or hovered then return style.accent end
+        return item.state == "resolved" and style.dim or style.text
+      end,
+      open = function() open_thread(item) end,
+    }
+  end
+  return nodes
+end
+
+local review_backend = { roots = review_roots }
+
+-- A TreeView that wraps each thread's first comment across multiple lines.
+local ReviewSidebar = TreeView:extend()
+
+local function wrap_lines(text, font, max_w)
+  local lines = {}
+  local current = ""
+  for word in tostring(text or ""):gmatch("%S+") do
+    local trial = current == "" and word or (current .. " " .. word)
+    if current == "" or font:get_width(trial) <= max_w then
+      current = trial
+    else
+      lines[#lines + 1] = current
+      current = word
+    end
+  end
+  if current ~= "" then lines[#lines + 1] = current end
+  return lines
+end
+
+local function body_indent()
+  return style.padding.x * 2 + style.icon_font:get_width("D") + style.icon_font:get_width("f") / 2
+end
+
+function ReviewSidebar:body_lines(item)
+  local node = item.node
+  local body = node and node.body or ""
+  if body == "" then return {} end
+  local max_w = math.max(40, self.size.x - body_indent() - style.padding.x)
+  self._wrap_cache = self._wrap_cache or {}
+  local cached = self._wrap_cache[node.id]
+  if cached and cached.w == max_w and cached.body == body then return cached.lines end
+  local lines = wrap_lines(body, style.font, max_w)
+  self._wrap_cache[node.id] = { w = max_w, body = body, lines = lines }
+  return lines
+end
+
+function ReviewSidebar:item_height(item)
+  local fh = style.font:get_height()
+  local body = self:body_lines(item)
+  local h = fh + style.padding.y
+  if #body > 0 then h = h + #body * fh + math.floor(style.padding.y / 2) end
+  return h
+end
+
+function ReviewSidebar:each_item()
+  return coroutine.wrap(function()
+    local ox, oy = self:get_content_offset()
+    local y = oy + style.padding.y
+    local count_lines = 0
+    for _, item in ipairs(self:rows()) do
+      local h = self:item_height(item)
+      coroutine.yield(item, ox, y, self.size.x, h)
+      y, count_lines = y + h, count_lines + 1
+    end
+    self.count_lines = count_lines
+  end)
+end
+
+function ReviewSidebar:get_scrollable_size()
+  local total = style.padding.y * 2
+  for _, item in ipairs(self:rows()) do
+    total = total + self:item_height(item)
+  end
+  return total + self:get_item_height()
+end
+
+function ReviewSidebar:draw_item(item, active, hovered, x, y, w, h)
+  self:draw_item_background(item, active, hovered, x, y, w, h)
+  local node = item.node
+  local fh = style.font:get_height()
+  local row_h = fh + style.padding.y
+  local ix = x + style.padding.x * 2
+  local icon_char, icon_font, icon_color = self:get_item_icon(item, active, hovered)
+  common.draw_text(icon_font, icon_color, icon_char, nil, ix, y, 0, row_h)
+  local tx = ix + style.icon_font:get_width("D") + style.icon_font:get_width("f") / 2
+  local _, _, hcolor = self:get_item_text(item, active, hovered)
+  common.draw_text(style.font, hcolor, node.header or self:get_node_label(node), nil, tx, y, 0, row_h)
+  local by = y + row_h
+  local body_color = node.dim and style.dim or style.text
+  for _, line in ipairs(self:body_lines(item)) do
+    renderer.draw_text(style.font, line, tx, by, body_color)
+    by = by + fh
+  end
+end
+
+local function find_review_sidebar()
+  for _, view in ipairs(core.root_view.root_node:get_children()) do
+    if view._devhq_review_sidebar then return view end
+  end
+end
+
+local function overlay_is_open()
+  for _, view in ipairs(core.root_view.root_node:get_children()) do
+    if view.devhq_comment_overlay then return true end
+  end
+  return false
+end
+
+local function ensure_review_sidebar()
+  local view = review_sidebar and find_review_sidebar()
+  if view then return view end
+  view = ReviewSidebar({ backend = review_backend, activate_on_single_click = true })
+  view._devhq_review_sidebar = true
+  local node = core.root_view:get_active_node_default()
+  view.node = node:split("right", view, { x = true }, true)
+  review_sidebar = view
+  return view
+end
+
+function show_review_sidebar()
+  local view = ensure_review_sidebar()
+  view.visible = true
+  core.redraw = true
+  return view
+end
+
+function refresh_review_sidebar()
+  if review_sidebar and find_review_sidebar() then core.redraw = true end
+end
+
+function M.toggle_review_sidebar()
+  local view = find_review_sidebar()
+  if view then
+    view.visible = not view.visible
+  else
+    show_review_sidebar()
+  end
+  core.redraw = true
+end
+
+-- -----------------------------------------------------------------------------
+
 function M.setup()
   ensure_loaded()
   command.add(nil, {
     ["devhq:add-comment"] = M.add_comment,
     ["devhq:resolve-comment"] = M.resolve_comment,
     ["devhq:post-all-comments"] = M.post_all_comments,
+    ["devhq:toggle-review-sidebar"] = M.toggle_review_sidebar,
   })
+
+  if not M._watcher_started then
+    M._watcher_started = true
+    core.add_thread(function()
+      while true do
+        ensure_loaded()
+        if loaded_worktree and state_file and not overlay_is_open() then
+          local mtime = file_mtime(state_file)
+          if mtime and loaded_mtime and mtime ~= loaded_mtime then
+            load(loaded_worktree)
+            refresh_review_sidebar()
+            core.redraw = true
+          end
+        end
+        coroutine.yield(1)
+      end
+    end)
+  end
   command.add(function()
     local view = core.active_view
     return view and view.devhq_comment_overlay ~= nil, view
