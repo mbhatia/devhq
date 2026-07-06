@@ -117,6 +117,19 @@ brew tap shell-pool/shpool
 brew install shpool
 ```
 
+## Review Sidebar
+
+The `devhq:toggle-review-sidebar` command opens a right-hand split that lists one
+entry per comment thread in the active worktree. The sidebar appears
+automatically when you leave a comment. Clicking an entry opens the commented
+file and jumps to the range. When a comment was anchored to a specific commit
+that is no longer `HEAD`, DevHQ opens that historical version of the file
+(`git show <commit>:<path>`) instead of the working copy.
+
+The sidebar and gutter markers reload automatically when the comment JSONL is
+changed on disk (for example by the reply CLI below), so external replies show
+up without switching worktrees.
+
 ## Review Reply CLI
 
 Agents can reply to an existing DevHQ review comment from the command line:
@@ -127,6 +140,9 @@ Agents can reply to an existing DevHQ review comment from the command line:
 
 The command only appends an `agent` reply to the existing comment. It does not
 create comments or resolve them. On success it prints the new reply ID.
+
+Posting comments to an agent includes each thread's id and these usage
+instructions, so the agent can reply to the right thread.
 
 Set `DEVHQ_USERDIR` or `LITE_USERDIR` when the script cannot infer the Lite XL
 user directory from its own path.

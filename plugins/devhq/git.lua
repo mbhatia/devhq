@@ -747,6 +747,21 @@ function M.diff_for_commit_file(path, commit, file, yielding)
   return output, nil, { parent = first_parent(commit), commit = commit, path = rel }
 end
 
+function M.head_commit(path, yielding)
+  local output, code = run(path, { "rev-parse", "HEAD" }, yielding)
+  if code ~= 0 or trim(output) == "" then return nil end
+  return trim(output)
+end
+
+function M.file_at_commit(path, ref, rel, yielding)
+  rel = git_path(rel)
+  local output, code = run(path, { "show", tostring(ref) .. ":" .. rel }, yielding)
+  if code ~= 0 then
+    return nil, trim(output)
+  end
+  return output
+end
+
 function M.commit_for_file(path, file, yielding)
   local rel = common.relative_path(path, file)
   local output, code = run(path, { "status", "--porcelain", "--", rel }, yielding)
@@ -754,11 +769,7 @@ function M.commit_for_file(path, file, yielding)
     return "uncommitted"
   end
 
-  output, code = run(path, { "rev-parse", "HEAD" }, yielding)
-  if code ~= 0 or trim(output) == "" then
-    return "uncommitted"
-  end
-  return trim(output)
+  return M.head_commit(path, yielding) or "uncommitted"
 end
 
 function M.tree_status(path, yielding)
