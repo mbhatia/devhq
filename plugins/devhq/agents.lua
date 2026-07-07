@@ -11,14 +11,16 @@ local M = {}
 local rt = core.devhq_agents_runtime or { views = {} }
 core.devhq_agents_runtime = rt
 
-local function shell_quote(value) return '"' .. tostring(value or ""):gsub('"', '\\"') .. '"' end
+local function shell_quote_double(value) return '"' .. tostring(value or ""):gsub('"', '\\"') .. '"' end
+local function shell_quote_single(value) return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'" end
 
 config.plugins.devhq = config.plugins.devhq or {}
 config.plugins.devhq.agents = config.plugins.devhq.agents or {}
 local codex_start_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO"']]
 local codex_resume_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO" resume']]
+local codex_resume_thread_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO" resume "$THREAD_ID"']]
 local function codex_cmd(cmd)
-  local quoted = shell_quote(cmd)
+  local quoted = shell_quote_double(cmd)
   return [[session="$REPO_ID:${AGENT_ID##*:}"; ]]
     .. [[ _shpool_with_config() { command -v shpool >/dev/null 2>&1 && [ -f "$HOME/.config/shpool/config.toml" ] && exec shpool -c "$HOME/.config/shpool/config.toml" attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
     .. [[ _shpool() { command -v shpool >/dev/null 2>&1 && exec shpool attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
@@ -44,6 +46,11 @@ end
 config.plugins.devhq.agents.codex = common.merge({
   start = codex_cmd(codex_start_cmd),
   resume = codex_cmd(codex_resume_cmd),
+  resume_thread = codex_cmd(codex_resume_thread_cmd),
+  thread = {
+    input = "/status\n",
+    pattern = "[Ss]ession%s*:%s*(%x+-%x+-%x+-%x+-%x+)",
+  },
   icon = "\u{e7cf}",
   icon_font = fontawesome_icon_font(),
 }, config.plugins.devhq.agents.codex)
@@ -99,22 +106,24 @@ local function agent_options(w, a, cmd)
   local r = parent_repo(w)
   if r and r.kind == "remote" then
     local remote_path = w.remote_path or r.remote_path
-    local script = "cd " .. shell_quote(remote_path)
-      .. " && REPO=" .. shell_quote(remote_path)
-      .. " && REPO_ID=" .. shell_quote(parent_repo_id(w))
-      .. " && AGENT_ID=" .. shell_quote(agent_id(a))
-      .. " && export REPO REPO_ID AGENT_ID"
+    local script = "cd " .. shell_quote_single(remote_path)
+      .. " && REPO=" .. shell_quote_single(remote_path)
+      .. " && REPO_ID=" .. shell_quote_single(parent_repo_id(w))
+      .. " && AGENT_ID=" .. shell_quote_single(agent_id(a))
+      .. " && THREAD_ID=" .. shell_quote_single(a.thread_id or "")
+      .. " && export REPO REPO_ID AGENT_ID THREAD_ID"
       .. " && " .. cmd
     return {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-      command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote(script) },
+      command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote_single(script) },
       agent_close_on_exit = "never",
     }
   end
   return {
     kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
     command = cmd, shell = true, agent_close_on_exit = "never",
-    env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a) },
+    env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a),
+      THREAD_ID = a.thread_id or "" },
   }
 end
 
@@ -169,15 +178,66 @@ local function focus(v)
   if n then n:set_active_view(v) else core.root_view:get_active_node_default():add_view(v) end
 end
 
+local function profile_input(text, a)
+  return tostring(text or "")
+    :gsub("%$AGENT_ID", function() return agent_id(a) end)
+    :gsub("%$AGENT_NAME", function() return tostring(a.name or "") end)
+    :gsub("%$THREAD_ID", function() return tostring(a.thread_id or "") end)
+end
+
+local function terminal_text(v)
+  local lines = {}
+  local rows = v and v.snapshot and v.snapshot.rows_data or {}
+  for _, row in ipairs(rows) do
+    local parts = {}
+    for _, span in ipairs(row.spans or {}) do parts[#parts + 1] = span.text or "" end
+    lines[#lines + 1] = table.concat(parts)
+  end
+  return table.concat(lines, "\n")
+end
+
+local function send_terminal_input(v, text, delay)
+  if not (v and v.terminal) then return end
+  for part, nl in tostring(text or ""):gsub("\r\n", "\n"):gmatch("([^\n]*)(\n?)") do
+    if part ~= "" then v.terminal:input_text(part) end
+    if nl ~= "" and v.on_key_pressed then
+      coroutine.yield(delay or 0.1)
+      v:on_key_pressed("return", nil, false, {})
+    end
+    if nl == "" then break end
+  end
+end
+
+local function capture_thread(v, a, p)
+  local cfg = p and p.thread
+  if type(cfg) ~= "table" or not cfg.pattern or a.thread_id then return end
+  core.add_thread(function()
+    coroutine.yield(cfg.delay or 1)
+    if cfg.input then send_terminal_input(v, profile_input(cfg.input, a), cfg.submit_delay) end
+    for _ = 1, cfg.attempts or 50 do
+      if not v.terminal then return end
+      if v.update then v:update() end
+      local id = terminal_text(v):match(cfg.pattern)
+      if id and id ~= "" then
+        a.thread_id = id
+        save()
+        return
+      end
+      coroutine.yield(cfg.interval or 0.2)
+    end
+  end)
+end
+
 local function launch(w, a, action)
   local k, v = key(w, a), rt.views[key(w, a)]
   if not (v and v.terminal) then
     local p = profiles()[a.profile]
-    local cmd = p and (p[action] or p.start)
+    local cmd = p and (action == "resume" and a.thread_id and p.resume_thread or p[action] or p.start)
     if not cmd then return core.error("Unknown DevHQ agent profile: %s", a.profile) end
     v = ghostty.open_tab(agent_options(w, a, cmd))
     install_attention_clearer(v)
     v.devhq_agent_key, rt.views[k] = k, v
+    capture_thread(v, a, p)
   end
   a.needs_input = false
   set_title(v, a)
