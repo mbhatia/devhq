@@ -11,7 +11,8 @@ local M = {}
 local rt = core.devhq_agents_runtime or { views = {} }
 core.devhq_agents_runtime = rt
 
-local function shell_quote(value) return '"' .. tostring(value or ""):gsub('"', '\\"') .. '"' end
+local function shell_quote_double(value) return '"' .. tostring(value or ""):gsub('"', '\\"') .. '"' end
+local function shell_quote_single(value) return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'" end
 
 config.plugins.devhq = config.plugins.devhq or {}
 config.plugins.devhq.agents = config.plugins.devhq.agents or {}
@@ -19,7 +20,7 @@ local codex_start_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO"']]
 local codex_resume_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO" resume']]
 local codex_resume_thread_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO" resume "$THREAD_ID"']]
 local function codex_cmd(cmd)
-  local quoted = shell_quote(cmd)
+  local quoted = shell_quote_double(cmd)
   return [[session="$REPO_ID:${AGENT_ID##*:}"; ]]
     .. [[ _shpool_with_config() { command -v shpool >/dev/null 2>&1 && [ -f "$HOME/.config/shpool/config.toml" ] && exec shpool -c "$HOME/.config/shpool/config.toml" attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
     .. [[ _shpool() { command -v shpool >/dev/null 2>&1 && exec shpool attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
@@ -105,16 +106,16 @@ local function agent_options(w, a, cmd)
   local r = parent_repo(w)
   if r and r.kind == "remote" then
     local remote_path = w.remote_path or r.remote_path
-    local script = "cd " .. shell_quote(remote_path)
-      .. " && REPO=" .. shell_quote(remote_path)
-      .. " && REPO_ID=" .. shell_quote(parent_repo_id(w))
-      .. " && AGENT_ID=" .. shell_quote(agent_id(a))
-      .. " && THREAD_ID=" .. shell_quote(a.thread_id or "")
+    local script = "cd " .. shell_quote_single(remote_path)
+      .. " && REPO=" .. shell_quote_single(remote_path)
+      .. " && REPO_ID=" .. shell_quote_single(parent_repo_id(w))
+      .. " && AGENT_ID=" .. shell_quote_single(agent_id(a))
+      .. " && THREAD_ID=" .. shell_quote_single(a.thread_id or "")
       .. " && export REPO REPO_ID AGENT_ID THREAD_ID"
       .. " && " .. cmd
     return {
       kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
-      command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote(script) },
+      command = { "ssh", "-At", r.server, "/bin/sh -lc " .. shell_quote_single(script) },
       agent_close_on_exit = "never",
     }
   end
