@@ -1,4 +1,4 @@
-# DevHQ
+# DevHQ&trade;
 
 **This is an early preview release. Consider this a prototype/Alpha release.**
 
