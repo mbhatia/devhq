@@ -16,9 +16,10 @@ curl -fsSL https://raw.githubusercontent.com/mbhatia/devhq/main/install.sh | sh
 ```
 
 On macOS the script downloads the official Lite XL DMG and installs the app into
-`/Applications`. It also downloads the Lite XL Package Manager (`lpm`) to a
-temporary directory, adds the DevHQ package repository, and installs the `devhq`
-package. On Linux, `lpm` still installs Lite XL.
+`/Applications`. It prompts for a command-line tool directory, defaulting to
+`$HOME/.local/bin`, creates that directory if needed, installs `devhq` and `lpm`
+there, adds the DevHQ package repository, and installs the `devhq` package. On
+Linux, `lpm` still installs Lite XL.
 
 Run the same command again to upgrade or refresh an existing DevHQ install.
 
@@ -26,6 +27,18 @@ Run the same command again to upgrade or refresh an existing DevHQ install.
 
 ```sh
 DEVHQ_REPOSITORY_URL=https://github.com/example/devhq sh ./install.sh
+```
+
+For a non-`main` GitHub branch:
+
+```sh
+DEVHQ_REPOSITORY_URL=https://github.com/example/devhq.git:feature-branch sh ./install.sh
+```
+
+For a local checkout:
+
+```sh
+DEVHQ_REPOSITORY_URL=/path/to/devhq sh ./install.sh
 ```
 -->
 
