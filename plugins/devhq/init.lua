@@ -276,6 +276,40 @@ local function finish_worktree_change(repo)
   core.redraw = true
 end
 
+local function remove_recent_project(path)
+  path = common.normalize_volume(path)
+  for i = #(core.recent_projects or {}), 1, -1 do
+    if core.recent_projects[i] == path then
+      table.remove(core.recent_projects, i)
+    end
+  end
+end
+
+local function fallback_worktree_path(repo, removed_path)
+  if repo.path ~= removed_path and system.get_file_info(repo.path) then
+    return repo.path
+  end
+  for _, worktree in ipairs(repo.worktrees or {}) do
+    if worktree.path ~= removed_path and system.get_file_info(worktree.path) then
+      return worktree.path
+    end
+  end
+end
+
+local function remove_lite_project_dir(repo, path)
+  path = common.normalize_volume(path)
+  remove_recent_project(path)
+  if core.project_dir == path then
+    local fallback = fallback_worktree_path(repo, path)
+    if fallback then
+      core.open_folder_project(fallback)
+      selected_worktree = fallback
+    end
+  else
+    core.remove_project_directory(path)
+  end
+end
+
 local function sync_remote_repo(repo)
   if not repo or repo.kind ~= "remote" then return end
   core.add_thread(function()
@@ -332,6 +366,7 @@ local function remove_worktree(repo, worktree)
     return
   end
   if selected_worktree == worktree.path then selected_worktree = nil end
+  remove_lite_project_dir(repo, worktree.path)
   finish_worktree_change(repo)
 end
 
