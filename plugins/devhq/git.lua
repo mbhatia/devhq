@@ -81,6 +81,27 @@ local function split_lines(text)
   return lines
 end
 
+local function matching_output_line(output, predicate)
+  local lines = split_lines(output)
+  for i = #lines, 1, -1 do
+    local line = trim(lines[i])
+    if predicate(line) then return line end
+  end
+end
+
+function M.parse_remote_oid(output)
+  return matching_output_line(output, function(line)
+    return (line:len() == 40 or line:len() == 64) and line:match("^%x+$") ~= nil
+  end)
+end
+
+function M.parse_remote_count(output)
+  local line = matching_output_line(output, function(value)
+    return value:match("^%d+$") ~= nil
+  end)
+  return line and tonumber(line) or nil
+end
+
 local function shell_quote(value)
   return "'" .. tostring(value or ""):gsub("'", "'\\''") .. "'"
 end
@@ -378,16 +399,16 @@ local function remote_git(repo, args, yielding)
 end
 
 local function parse_remote_list(output)
-  local by_name, names = {}, {}
+  local seen, names = {}, {}
   for _, line in ipairs(split_lines(output)) do
-    local name, url, kind = line:match("^(%S+)%s+(%S+)%s+%((%w+)%)")
-    if name and url and kind == "fetch" and not by_name[name] then
-      by_name[name] = url
+    local name, kind = line:match("^(%S+)%s+%S+%s+%((%w+)%)")
+    if name and kind == "fetch" and not seen[name] then
+      seen[name] = true
       names[#names + 1] = name
     end
   end
   table.sort(names)
-  return names, by_name
+  return names
 end
 
 local function parse_upstreams(output)
@@ -413,11 +434,26 @@ function M.remote_mirror_worktree_add_args(path, ref)
   return { "worktree", "add", "--detach", path, ref or "HEAD" }
 end
 
+function M.remote_mirror_clone_args(source, path)
+  return { "git", "clone", "--depth=1", "--no-tags", "--no-checkout", source, path }
+end
+
 local function remote_ref_parts(ref)
   local remote, branch = tostring(ref or ""):match("^([^/]+)/(.+)$")
   if remote and branch and remote ~= "" and branch ~= "" then
     return remote, branch
   end
+end
+
+local function remote_tracking_ref(remote, branch)
+  return "refs/remotes/" .. tostring(remote) .. "/" .. tostring(branch)
+end
+
+function M.remote_mirror_fetch_args(server, branch, depth)
+  return {
+    "fetch", "--force", "--no-tags", "--depth=" .. tostring(math.max(1, depth or 1)),
+    server, "+refs/heads/" .. branch .. ":" .. remote_tracking_ref(server, branch),
+  }
 end
 
 local function fetch_ref_history(path, ref, mode, yielding)
@@ -505,14 +541,73 @@ local function parent_base(path, yielding)
   end
 end
 
-local function worktree_ref(repo, wt)
-  if wt.branch_name and wt.branch_name ~= "" then return tostring(repo.server) .. "/" .. wt.branch_name end
-  return wt.head
-end
-
 local function local_worktree_path(repo, remote_path)
   if tostring(remote_path) == tostring(repo.remote_path) then return repo.cache_path end
   return M.remote_cache_path(repo.server, remote_path)
+end
+
+function M.remote_mirror_parent_candidates(upstream, remote_names)
+  local candidates, seen = {}, {}
+  add_candidate(candidates, seen, tostring(upstream or ""))
+  add_remote_parent_candidates(candidates, seen, "origin")
+  for _, remote in ipairs(remote_names or {}) do
+    add_remote_parent_candidates(candidates, seen, remote)
+  end
+  for _, branch in ipairs(parent_branches) do add_candidate(candidates, seen, branch) end
+  return candidates
+end
+
+local function resolve_remote_histories(repo, worktrees, upstreams, remote_names, yielding)
+  for _, wt in ipairs(worktrees) do
+    local upstream = upstreams[wt.branch_name]
+    wt.fetch_depth = 1
+    for _, candidate in ipairs(M.remote_mirror_parent_candidates(upstream, remote_names)) do
+      local output, code = remote_git(repo, { "merge-base", wt.head, candidate }, yielding)
+      local merge_base = code == 0 and M.parse_remote_oid(output) or nil
+      if merge_base then
+        output, code = remote_git(repo,
+          { "rev-list", "--count", merge_base .. ".." .. wt.head }, yielding)
+        if code ~= 0 then return false, output end
+        local distance = M.parse_remote_count(output)
+        if not distance then
+          return false, "Could not determine shallow history depth for " .. tostring(wt.remote_path)
+        end
+        wt.merge_base = merge_base
+        wt.fetch_depth = distance + 1
+        break
+      end
+    end
+  end
+  return true
+end
+
+local function configure_local_remote(path, name, url, yielding)
+  local _, code = run(path, { "remote", "get-url", name }, yielding)
+  local action = code == 0 and "set-url" or "add"
+  local output
+  output, code = run(path, { "remote", action, name, url }, yielding)
+  return code == 0, output
+end
+
+local function remove_stale_worktrees(path, existing, wanted, yielding)
+  for worktree_path in pairs(existing) do
+    if worktree_path ~= path and not wanted[worktree_path] then
+      local output, code = run(path, { "worktree", "remove", "--force", worktree_path }, yielding)
+      if code ~= 0 then return false, output end
+    end
+  end
+  local output, code = run(path, { "worktree", "prune" }, yielding)
+  return code == 0, output
+end
+
+local function delete_refs(path, namespace, yielding)
+  local output, code = run(path, { "for-each-ref", "--format=%(refname)", namespace }, yielding)
+  if code ~= 0 then return false, output end
+  for _, ref in ipairs(split_lines(output)) do
+    output, code = run(path, { "update-ref", "-d", ref }, yielding)
+    if code ~= 0 then return false, output end
+  end
+  return true
 end
 
 function M.sync_remote_repo(repo, yielding)
@@ -523,28 +618,14 @@ function M.sync_remote_repo(repo, yielding)
   if not ok then return false, err end
 
   if not system.get_file_info(join_path(repo.cache_path, ".git")) then
-    local output, code = run_command({ "git", "clone", "--depth=1", "--no-single-branch", "--no-checkout",
-      remote_source(repo), repo.cache_path }, common.dirname(repo.cache_path), yielding)
+    local output, code = run_command(M.remote_mirror_clone_args(remote_source(repo), repo.cache_path),
+      common.dirname(repo.cache_path), yielding)
     if code ~= 0 then return false, output end
   end
 
   local output, code = remote_git(repo, { "remote", "-v" }, yielding)
   if code ~= 0 then return false, output end
-  local names, urls = parse_remote_list(output)
-  urls[tostring(repo.server)] = remote_source(repo)
-  names[#names + 1] = tostring(repo.server)
-  for _, name in ipairs(names) do
-    local url = urls[name]
-    if url then
-      output, code = run(repo.cache_path, { "remote", "set-url", name, url }, yielding)
-      if code ~= 0 then
-        output, code = run(repo.cache_path, { "remote", "add", name, url }, yielding)
-        if code ~= 0 then return false, output end
-      end
-      output, code = run(repo.cache_path, { "fetch", name }, yielding)
-      if code ~= 0 then return false, output end
-    end
-  end
+  local names = parse_remote_list(output)
 
   output, code = remote_git(repo, { "for-each-ref", "--format=%(refname:short)\t%(upstream:short)", "refs/heads" }, yielding)
   if code ~= 0 then return false, output end
@@ -554,7 +635,7 @@ function M.sync_remote_repo(repo, yielding)
 
   local mapped = {}
   for _, wt in ipairs(M.parse_worktree_porcelain(output)) do
-    if wt.path and not wt.bare and not wt.prunable then
+    if wt.path and wt.branch_name and wt.branch_name ~= "" and not wt.bare and not wt.prunable then
       local remote_path = wt.path
       local cache_path = local_worktree_path(repo, remote_path)
       mapped[#mapped + 1] = {
@@ -568,39 +649,93 @@ function M.sync_remote_repo(repo, yielding)
     end
   end
 
+  ok, err = resolve_remote_histories(repo, mapped, upstreams, names, yielding)
+  if not ok then return false, err end
+
+  local server = tostring(repo.server)
+  ok, err = configure_local_remote(repo.cache_path, server, remote_source(repo), yielding)
+  if not ok then return false, err end
+
+  -- Explicit fetch refspecs recreate only the active tracking refs.
+  ok, err = delete_refs(repo.cache_path, "refs/remotes", yielding)
+  if not ok then return false, err end
+
+  local depths = {}
+  for _, wt in ipairs(mapped) do
+    depths[wt.branch_name] = math.max(depths[wt.branch_name] or 1, wt.fetch_depth)
+  end
+  for branch, depth in pairs(depths) do
+    output, code = run(repo.cache_path,
+      M.remote_mirror_fetch_args(repo.server, branch, depth), yielding)
+    if code ~= 0 then return false, output end
+  end
+
   local existing = {}
   for _, wt in ipairs(M.worktrees(repo.cache_path)) do existing[wt.path] = true end
+  local wanted = {}
+  for _, wt in ipairs(mapped) do wanted[wt.path] = true end
+  ok, err = remove_stale_worktrees(repo.cache_path, existing, wanted, yielding)
+  if not ok then return false, err end
+  existing = {}
+  for _, wt in ipairs(M.worktrees(repo.cache_path)) do existing[wt.path] = true end
+
   for _, wt in ipairs(mapped) do
-    local ref = worktree_ref(repo, wt)
-    local upstream = upstreams[wt.branch_name]
-    if not ensure_merge_base(repo.cache_path, ref, upstream, yielding) then
-      return false, "Could not fetch merge-base history for " .. tostring(ref) ..
-        " and " .. tostring(upstream)
+    local ref = remote_tracking_ref(repo.server, wt.branch_name)
+    local parent = wt.merge_base
+    local local_head_output, local_head_code = run(repo.cache_path, { "rev-parse", "--verify", ref }, yielding)
+    local local_head = local_head_code == 0 and trim(local_head_output) or ""
+    if local_head ~= wt.head then
+      return false, "Remote branch changed while syncing " .. tostring(wt.branch_name) .. "; retry sync"
+    end
+    if parent and merge_base_refs(repo.cache_path, ref, parent, yielding) ~= parent then
+      return false, "Could not fetch shallow history through merge-base " .. tostring(parent) ..
+        " for " .. tostring(ref)
     end
     if wt.path == repo.cache_path then
       for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
         output, code = run_command(command, wt.path, yielding)
         if code ~= 0 then return false, output end
       end
-      store_parent_ref(wt.path, upstream, yielding)
+      store_parent_ref(wt.path, parent, yielding)
     elseif existing[wt.path] then
       for _, command in ipairs(M.remote_mirror_checkout_commands(wt.path, ref)) do
         output, code = run_command(command, wt.path, yielding)
         if code ~= 0 then return false, output end
       end
-      store_parent_ref(wt.path, upstream, yielding)
+      store_parent_ref(wt.path, parent, yielding)
     else
       ok, err = ensure_dir(common.dirname(wt.path))
       if not ok then return false, err end
       output, code = run(repo.cache_path, M.remote_mirror_worktree_add_args(wt.path, ref), yielding)
       if code ~= 0 then return false, output end
-      store_parent_ref(wt.path, upstream, yielding)
+      store_parent_ref(wt.path, parent, yielding)
     end
+  end
+
+  -- All mirror worktrees are detached. Drop clone-created branches and tags so
+  -- only active shallow histories remain reachable.
+  -- A bare remote repository has no main worktree to map onto the cache root;
+  -- detach its local HEAD without materializing an extra checkout.
+  if not wanted[repo.cache_path] and mapped[1] then
+    output, code = run(repo.cache_path,
+      { "update-ref", "--no-deref", "HEAD",
+        remote_tracking_ref(repo.server, mapped[1].branch_name) }, yielding)
+    if code ~= 0 then return false, output end
+  end
+
+  local namespaces = { "refs/tags", "refs/heads" }
+  for _, namespace in ipairs(namespaces) do
+    ok, err = delete_refs(repo.cache_path, namespace, yielding)
+    if not ok then return false, err end
   end
 
   local agents_by_path = {}
   for _, wt in ipairs(repo.worktrees or {}) do agents_by_path[wt.path] = wt.agents end
-  for _, wt in ipairs(mapped) do wt.agents = agents_by_path[wt.path] or {} end
+  for _, wt in ipairs(mapped) do
+    wt.fetch_depth = nil
+    wt.merge_base = nil
+    wt.agents = agents_by_path[wt.path] or {}
+  end
   repo.worktrees = mapped
   repo.last_error = nil
   return true

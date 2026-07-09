@@ -64,6 +64,52 @@ local function test_remote_mirror_worktree_add_uses_detached_checkout()
   assert_not_contains(args, "develop", "remote mirror worktree add must not pass local branch name")
 end
 
+local function test_remote_mirror_clone_is_single_branch_and_shallow()
+  local git = require "plugins.devhq.git"
+  local args = git.remote_mirror_clone_args("dev226:/co/repo", "/cache/repo")
+
+  assert_contains(args, "--depth=1", "remote mirror clone starts at depth one")
+  assert_contains(args, "--no-tags", "remote mirror clone excludes tags")
+  assert_contains(args, "--no-checkout", "remote mirror clone defers checkout")
+  assert_not_contains(args, "--no-single-branch", "remote mirror clone must not fetch every branch")
+end
+
+local function test_remote_mirror_fetches_only_required_shallow_history()
+  local git = require "plugins.devhq.git"
+  local args = git.remote_mirror_fetch_args("dev226", "feature/x", 18)
+
+  assert_contains(args, "--depth=18", "fetch is explicitly shallow")
+  assert_contains(args, "--no-tags", "fetch excludes tag history")
+  assert_contains(args, "dev226", "history is fetched only from the checkout server")
+  assert_contains(args, "+refs/heads/feature/x:refs/remotes/dev226/feature/x",
+    "fetch targets only the active branch")
+  assert_not_contains(args, "--unshallow", "fetch must not unshallow the mirror")
+end
+
+local function test_remote_scalar_output_ignores_ssh_warnings()
+  local git = require "plugins.devhq.git"
+  local warning = "** WARNING: connection is not using a post-quantum key exchange algorithm.\n" ..
+    "** This session may be vulnerable to store now, decrypt later attacks.\n"
+  local oid = "44679e733eeac17b1a187cf4f33e7d0bdbeb98e5"
+
+  assert_equal(git.parse_remote_oid(warning .. oid .. "\n"), oid,
+    "remote OID parser ignores SSH diagnostics")
+  assert_equal(git.parse_remote_count(warning .. "14\n"), 14,
+    "remote count parser ignores SSH diagnostics")
+  assert_equal(git.parse_remote_oid(warning), nil,
+    "remote OID parser does not treat diagnostics as a result")
+end
+
+local function test_remote_mirror_parent_candidates_match_local_precedence()
+  local git = require "plugins.devhq.git"
+  local candidates = git.remote_mirror_parent_candidates("fork/topic", { "fork", "upstream" })
+
+  assert_equal(candidates[1], "fork/topic", "tracking branch is preferred")
+  assert_equal(candidates[2], "origin/main", "standard origin branches follow")
+  assert_contains(candidates, "upstream/develop", "other remote defaults are considered")
+  assert_contains(candidates, "master", "local default branches are considered last")
+end
+
 local function test_duplicate_local_remote_branch_grouping()
   local tree_model = require "plugins.devhq.tree_model"
   local repos = {
@@ -106,6 +152,10 @@ end
 local tests = {
   test_remote_mirror_uses_detached_checkout,
   test_remote_mirror_worktree_add_uses_detached_checkout,
+  test_remote_mirror_clone_is_single_branch_and_shallow,
+  test_remote_mirror_fetches_only_required_shallow_history,
+  test_remote_scalar_output_ignores_ssh_warnings,
+  test_remote_mirror_parent_candidates_match_local_precedence,
   test_duplicate_local_remote_branch_grouping,
 }
 
