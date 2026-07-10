@@ -293,3 +293,30 @@ The development state file will be written to:
 ./devhq.lua
 ```
 -->
+
+## License
+
+Copyright (c) 2026 Manuj Bhatia.
+
+DevHQ is free software, licensed under the **GNU Affero General Public License
+v3.0 (AGPL-3.0)**. See the [LICENSE](LICENSE) file for the full text.
+
+Individuals and companies are free to use, modify, and self-host DevHQ. Because
+AGPL-3.0 is a network copyleft license, if you modify DevHQ and make it
+available to others over a network (for example, as a hosted service), you must
+also make the complete corresponding source code of your modified version
+available under the AGPL-3.0.
+
+## Trademarks
+
+"DevHQ" and the DevHQ name and logo are trademarks of Manuj Bhatia. The
+AGPL-3.0 license covers the source code only and grants no rights to these
+trademarks. Forks and derivative products must use a different name. See
+[TRADEMARK.md](TRADEMARK.md).
+
+## Contributing
+
+By contributing to DevHQ, you agree to the terms of the
+[Contributor License Agreement](CLA.md), which allows the Project to be offered
+under both the AGPL-3.0 and, at the Owner's discretion, other license terms
+(such as a commercial license). You retain copyright to your contributions.
