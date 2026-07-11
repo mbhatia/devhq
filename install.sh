@@ -3,10 +3,14 @@ set -eu
 
 DEVHQ_REPOSITORY_URL="${DEVHQ_REPOSITORY_URL:-https://github.com/mbhatia/devhq}"
 DEVHQ_LPM_RELEASE_URL="${DEVHQ_LPM_RELEASE_URL:-https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest}"
+DEVHQ_SHPOOL_REPOSITORY_URL="${DEVHQ_SHPOOL_REPOSITORY_URL:-https://github.com/shell-pool/shpool}"
 DEVHQ_CLI_URL="${DEVHQ_CLI_URL:-}"
 DEVHQ_BIN_DIR="${DEVHQ_BIN_DIR:-}"
+DEVHQ_APP_PATH="${DEVHQ_APP_PATH:-}"
+DEVHQ_LPM_PATH="${DEVHQ_LPM_PATH:-}"
 LITE_XL_VERSION="${LITE_XL_VERSION:-v2.1.8}"
 LITE_XL_DMG_URL="${LITE_XL_DMG_URL:-}"
+LITE_XL_DMG_PATH="${LITE_XL_DMG_PATH:-}"
 
 log() {
   printf '%s\n' "$*"
@@ -177,6 +181,84 @@ install_cli_tools() {
   mv "$lpm_tmp" "$lpm"
 
   install_devhq_cli
+  install_shpool
+}
+
+prepare_lpm() {
+  if [ -n "$DEVHQ_LPM_PATH" ]; then
+    [ -f "$DEVHQ_LPM_PATH" ] || die "missing lpm binary: $DEVHQ_LPM_PATH"
+    lpm="$DEVHQ_LPM_PATH"
+    return
+  fi
+
+  lpm="$tmpdir/lpm"
+  log "Downloading Lite XL Package Manager..."
+  download "$lpm_url" "$lpm"
+  chmod +x "$lpm"
+}
+
+run_lpm() {
+  if [ -n "$DEVHQ_APP_PATH" ]; then
+    resources_dir="$DEVHQ_APP_PATH/Contents/Resources"
+    "$lpm" \
+      --userdir="$resources_dir" \
+      --datadir="$resources_dir" \
+      --cachedir="$tmpdir/lpm-cache" \
+      --configdir="$tmpdir/lpm-config" \
+      --tmpdir="$tmpdir/lpm-tmp" \
+      --arch="$arch-$os" \
+      --no-color \
+      "$@"
+  else
+    "$lpm" "$@"
+  fi
+}
+
+install_shpool() {
+  shpool=""
+
+  case "$os" in
+    darwin)
+      if ! command -v brew >/dev/null 2>&1; then
+        log "warning: Homebrew is unavailable; skipping optional shpool installation."
+        return
+      fi
+
+      log "Installing shpool with Homebrew..."
+      if ! brew tap shell-pool/shpool || ! brew install shell-pool/shpool/shpool; then
+        log "warning: shpool installation failed; continuing without shpool."
+        log "warning: Homebrew may require: brew trust shell-pool/shpool"
+        return
+      fi
+      shpool="$(brew --prefix shpool)/bin/shpool"
+      if [ ! -x "$shpool" ]; then
+        log "warning: Homebrew did not install the shpool executable; continuing without shpool."
+        shpool=""
+      fi
+      ;;
+    linux)
+      if ! command -v cargo >/dev/null 2>&1; then
+        log "warning: Cargo is unavailable; skipping optional shpool installation."
+        return
+      fi
+
+      shpool="$bin_dir/shpool"
+      shpool_root="$tmpdir/shpool"
+
+      log "Installing shpool from $DEVHQ_SHPOOL_REPOSITORY_URL..."
+      if ! cargo install --git "$DEVHQ_SHPOOL_REPOSITORY_URL" --root "$shpool_root" --locked shpool; then
+        log "warning: shpool installation failed; continuing without shpool."
+        shpool=""
+        return
+      fi
+      if [ ! -x "$shpool_root/bin/shpool" ]; then
+        log "warning: shpool installation did not produce an executable; continuing without shpool."
+        shpool=""
+        return
+      fi
+      mv "$shpool_root/bin/shpool" "$shpool"
+      ;;
+  esac
 }
 
 install_lite_xl_macos() {
@@ -184,12 +266,16 @@ install_lite_xl_macos() {
   need_cmd ditto
   need_cmd mkdir
 
-  dmg="$tmpdir/lite-xl.dmg"
+  dmg="${LITE_XL_DMG_PATH:-$tmpdir/lite-xl.dmg}"
   mount_dir="$tmpdir/lite-xl-mount"
-  dmg_url="$(lite_xl_macos_dmg_url)"
 
-  log "Downloading Lite XL DMG..."
-  download "$dmg_url" "$dmg"
+  if [ -z "$LITE_XL_DMG_PATH" ]; then
+    dmg_url="$(lite_xl_macos_dmg_url)"
+    log "Downloading Lite XL DMG..."
+    download "$dmg_url" "$dmg"
+  else
+    [ -f "$dmg" ] || die "missing Lite XL DMG: $dmg"
+  fi
 
   log "Mounting Lite XL DMG..."
   mkdir -p "$mount_dir"
@@ -209,14 +295,16 @@ install_lite_xl_macos() {
   [ -n "$source_app" ] || die "no .app bundle found in Lite XL DMG"
 
   app_name="${source_app##*/}"
-  target_app="/Applications/$app_name"
+  target_app="${DEVHQ_APP_PATH:-/Applications/$app_name}"
   case "$target_app" in
-    /Applications/*.app) ;;
-    *) die "unexpected Lite XL app path: $target_app" ;;
+    *.app) ;;
+    *) die "Lite XL app path must end in .app: $target_app" ;;
   esac
 
-  log "Installing $app_name to /Applications..."
-  if [ -w /Applications ]; then
+  log "Installing $app_name to $target_app..."
+  target_parent="${target_app%/*}"
+  mkdir -p "$target_parent"
+  if [ -n "$DEVHQ_APP_PATH" ] || [ -w /Applications ]; then
     rm -rf "$target_app"
     ditto "$source_app" "$target_app"
   else
@@ -256,24 +344,26 @@ detach_lite_xl_dmg() {
 install_lite_xl() {
   case "$os" in
     darwin) install_lite_xl_macos ;;
-    *) "$lpm" install lite-xl --assume-yes ;;
+    *) run_lpm install lite-xl --assume-yes ;;
   esac
 }
 
 update_devhq_repository() {
   log "Updating DevHQ package repository..."
-  if ! "$lpm" repo update "$DEVHQ_REPOSITORY_URL"; then
+  if ! run_lpm repo update "$DEVHQ_REPOSITORY_URL"; then
     log "DevHQ repository update failed; updating all package repositories."
-    "$lpm" repo update
+    run_lpm repo update
   fi
 }
 
 install_devhq() {
   log "Installing or upgrading DevHQ..."
-  "$lpm" install devhq --assume-yes
+  run_lpm install devhq --assume-yes
+}
 
-  log "Refreshing DevHQ installation..."
-  "$lpm" reinstall devhq --assume-yes
+install_lite_xl_plugins() {
+  log "Installing language and LSP plugins..."
+  run_lpm install meta_languages lsp --assume-yes
 }
 
 need_cmd uname
@@ -300,21 +390,31 @@ trap cleanup EXIT HUP INT TERM
 lpm_url="$DEVHQ_LPM_RELEASE_URL/lpm.$arch-$os"
 
 log "Installing DevHQ for $os/$arch"
-install_cli_tools
+if [ -n "$DEVHQ_APP_PATH" ]; then
+  prepare_lpm
+else
+  install_cli_tools
+fi
 
 log "Installing Lite XL..."
 install_lite_xl
 
 log "Adding DevHQ package repository..."
-if ! "$lpm" repo add "$DEVHQ_REPOSITORY_URL"; then
+if ! run_lpm repo add "$DEVHQ_REPOSITORY_URL" --assume-yes; then
   log "DevHQ repository may already be configured; continuing."
 fi
 
 update_devhq_repository
+install_lite_xl_plugins
 install_devhq
 
 log "DevHQ installation complete."
-log "Installed command-line tools:"
-log "  $lpm"
-log "  $devhq_cli"
+if [ -z "$DEVHQ_APP_PATH" ]; then
+  log "Installed command-line tools:"
+  log "  $lpm"
+  log "  $devhq_cli"
+  if [ -n "$shpool" ]; then
+    log "  $shpool"
+  fi
+fi
 log "Open Lite XL to start using DevHQ."

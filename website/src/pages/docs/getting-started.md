@@ -18,8 +18,13 @@ curl -fsSL https://raw.githubusercontent.com/mbhatia/devhq/main/install.sh | sh
 On macOS the script downloads the official Lite XL DMG and installs the app into
 `/Applications`. It prompts for a command-line tool directory, defaulting to
 `$HOME/.local/bin`, creates that directory if needed, installs `devhq` and `lpm`
-there, adds the DevHQ package repository, and installs the `devhq` package. On
-Linux, `lpm` still installs Lite XL.
+there, adds the DevHQ package repository, and installs the language, LSP, and
+`devhq` packages. On macOS, it attempts to install optional
+[shpool](https://github.com/shell-pool/shpool) with Homebrew. On Linux, it
+attempts to install `shpool` into the selected directory when Cargo is
+available. A missing package manager, an untrusted Homebrew tap, or an
+installation failure produces a warning and does not stop DevHQ installation.
+On Linux, `lpm` still installs Lite XL.
 
 Run the same command again to upgrade or refresh an existing DevHQ install.
 
@@ -64,11 +69,16 @@ Install Lite XL and DevHQ:
 
 On Linux, install Lite XL with `./lpm install lite-xl` before installing DevHQ.
 
-Optional — install `shpool` so agent sessions survive editor restarts:
+Install the language and LSP plugins:
 
 ```sh
-brew tap shell-pool/shpool
-brew install shpool
+./lpm install meta_languages lsp --assume-yes
+```
+
+Install `shpool` so agent sessions survive editor restarts:
+
+```sh
+cargo install --git https://github.com/shell-pool/shpool --locked shpool
 ```
 
 ## First run
