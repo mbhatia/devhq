@@ -15,7 +15,13 @@ local function basename(path)
   return path:match("([^/\\]+)$") or path
 end
 
+-- Review-mirror repo kinds (kept as plain tables so this module stays dependency-light).
+local forge_repo_prefix = { github = "[gh] ", gitlab = "[gl] ", gerrit = "[gerrit] " }
+local forge_change_prefix = { github = "gh#", gitlab = "gl!", gerrit = "gerrit#" }
+
 function M.repo_display_name(repo)
+  local prefix = repo and forge_repo_prefix[repo.kind]
+  if prefix then return prefix .. (repo.nwo or "repo") end
   local path = repo and repo.kind == "remote" and repo.remote_path or repo and repo.path
   local name = basename(path)
   return name ~= "" and name or "repo"
@@ -30,6 +36,10 @@ function M.repo_group_for_repo(repo)
 end
 
 function M.worktree_label(repo, worktree)
+  local prefix = repo and forge_change_prefix[repo.kind]
+  if prefix then
+    return "[" .. prefix .. tostring(worktree.pr_number) .. "] " .. tostring(worktree.branch)
+  end
   if repo and repo.kind == "remote" then
     return "[" .. tostring(repo.server) .. "] " .. tostring(worktree.branch)
   end
@@ -51,7 +61,7 @@ function M.build_repo_groups(repos)
       groups[#groups + 1] = group
     end
     group.repos[#group.repos + 1] = repo
-    if not group.local_repo and repo.kind ~= "remote" then
+    if not group.local_repo and repo.kind ~= "remote" and not forge_repo_prefix[repo.kind] then
       group.local_repo = repo
     end
   end

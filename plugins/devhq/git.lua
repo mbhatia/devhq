@@ -21,43 +21,12 @@ local function git_path(path)
   return (path:gsub("/", PATHSEP))
 end
 
-local function run(path, args, yielding)
-  local command = { "git", "-C", path }
-  for _, arg in ipairs(args) do
-    command[#command + 1] = arg
-  end
-
-  local proc = process.start(command, {
-    cwd = path,
-    stdout = process.REDIRECT_PIPE,
-    stderr = process.REDIRECT_STDOUT,
-  })
-  if not proc then
-    return "", -1
-  end
-
-  local chunks = {}
-  while true do
-    local chunk = proc:read_stdout()
-    if chunk == nil then
-      break
-    end
-    if chunk ~= "" then
-      chunks[#chunks + 1] = chunk
-    end
-    if yielding then
-      coroutine.yield(0)
-    end
-  end
-
-  return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
-end
-
-local function run_command(command, cwd, yielding)
+local function run_command(command, cwd, yielding, env)
   local proc = process.start(command, {
     cwd = cwd,
     stdout = process.REDIRECT_PIPE,
     stderr = process.REDIRECT_STDOUT,
+    env = env,
   })
   if not proc then
     return "", -1
@@ -71,6 +40,12 @@ local function run_command(command, cwd, yielding)
     if yielding then coroutine.yield(0) end
   end
   return table.concat(chunks), proc:wait(process.WAIT_INFINITE)
+end
+
+local function run(path, args, yielding)
+  local command = { "git", "-C", path }
+  for _, arg in ipairs(args) do command[#command + 1] = arg end
+  return run_command(command, path, yielding)
 end
 
 local function split_lines(text)
@@ -272,23 +247,25 @@ local function git_dir(path, yielding)
   return trim(output)
 end
 
-local function stored_parent_ref(path, yielding)
+local function stored_review_refs(path, yielding)
   local dir = git_dir(path, yielding)
   if not dir then return end
   -- Detached remote mirrors have no branch upstream; sync stores it per worktree.
   local file = io.open(join_path(dir, "devhq-parent-ref"), "r")
   if not file then return end
-  local ref = trim(file:read("*a"))
+  local parent = trim(file:read("*l") or "")
+  local review = trim(file:read("*l") or "")
   file:close()
-  if ref ~= "" then return ref end
+  return parent ~= "" and parent or nil, review ~= "" and review or nil
 end
 
-local function store_parent_ref(path, ref, yielding)
+local function store_parent_ref(path, ref, yielding, review_ref)
   local dir = git_dir(path, yielding)
   if not dir then return end
   local file = io.open(join_path(dir, "devhq-parent-ref"), "w")
   if not file then return end
   file:write(trim(ref), "\n")
+  if review_ref and trim(review_ref) ~= "" then file:write(trim(review_ref), "\n") end
   file:close()
 end
 
@@ -456,24 +433,24 @@ function M.remote_mirror_fetch_args(server, branch, depth)
   }
 end
 
-local function fetch_ref_history(path, ref, mode, yielding)
+local function fetch_ref_history(path, ref, source_ref, mode, yielding)
   local remote, branch = remote_ref_parts(ref)
   if not remote then return true end
-  local args = { "fetch", mode, remote, branch }
+  local args = { "fetch", mode, remote, source_ref or branch }
   local _, code = run(path, args, yielding)
   return code == 0
 end
 
-local function ensure_merge_base(path, left, right, yielding)
+function M.ensure_review_merge_base(path, left, right, source_ref, yielding)
   if not left or left == "" or not right or right == "" then return true end
   if merge_base_refs(path, left, right, yielding) then return true end
   for _ = 1, 4 do
-    fetch_ref_history(path, left, "--deepen=50", yielding)
-    fetch_ref_history(path, right, "--deepen=50", yielding)
+    fetch_ref_history(path, left, source_ref, "--deepen=50", yielding)
+    fetch_ref_history(path, right, nil, "--deepen=50", yielding)
     if merge_base_refs(path, left, right, yielding) then return true end
   end
-  fetch_ref_history(path, left, "--unshallow", yielding)
-  fetch_ref_history(path, right, "--unshallow", yielding)
+  fetch_ref_history(path, left, source_ref, "--unshallow", yielding)
+  fetch_ref_history(path, right, nil, "--unshallow", yielding)
   return merge_base_refs(path, left, right, yielding) ~= nil
 end
 
@@ -519,12 +496,12 @@ local function parent_ref_candidates(path, upstream, stored, head_refs, yielding
   return candidates
 end
 
-local function base_for_ref(path, ref, head_refs, yielding)
+local function base_for_ref(path, ref, head_refs, review_ref, yielding)
   if not rev_exists(path, ref, yielding) then return end
   local base = merge_base(path, ref, yielding)
   if base then return base end
   for _, head_ref in ipairs(head_refs or {}) do
-    if ensure_merge_base(path, head_ref, ref, yielding) then
+    if M.ensure_review_merge_base(path, head_ref, ref, review_ref, yielding) then
       base = merge_base(path, ref, yielding)
       if base then return base end
     end
@@ -533,10 +510,10 @@ end
 
 local function parent_base(path, yielding)
   local upstream = configured_upstream_ref(path, yielding)
-  local stored = stored_parent_ref(path, yielding)
+  local stored, review_ref = stored_review_refs(path, yielding)
   local head_refs = remote_refs_pointing_at_head(path, yielding)
   for _, ref in ipairs(parent_ref_candidates(path, upstream, stored, head_refs, yielding)) do
-    local base = base_for_ref(path, ref, head_refs, yielding)
+    local base = base_for_ref(path, ref, head_refs, review_ref, yielding)
     if base then return base, ref end
   end
 end
@@ -745,6 +722,35 @@ function M.git_dir(path, yielding)
   return git_dir(path, yielding)
 end
 
+function M.github_cache_root()
+  return join_path(USERDIR, "devhq-github-prs")
+end
+
+local function nested_cache_path(path, parts)
+  for part in tostring(parts or ""):gmatch("[^/]+") do
+    if part ~= "" then path = join_path(path, safe_cache_part(part)) end
+  end
+  return path
+end
+
+function M.github_cache_path(nwo)
+  return nested_cache_path(M.github_cache_root(), nwo)
+end
+
+function M.gitlab_cache_path(nwo)
+  return nested_cache_path(join_path(USERDIR, "devhq-gitlab-mrs"), nwo)
+end
+
+function M.gerrit_cache_path(host, project)
+  local root = join_path(USERDIR, "devhq-gerrit-changes")
+  host = tostring(host or "")
+  return nested_cache_path(join_path(root, safe_cache_part(host ~= "" and host or "gerrit")), project)
+end
+
+M.shell_quote = shell_quote
+M.run_command = run_command
+M.store_parent_ref = store_parent_ref
+
 function M.common_dir(path, yielding)
   local output, code = run(path, { "rev-parse", "--path-format=absolute", "--git-common-dir" }, yielding)
   if code ~= 0 then return end
@@ -905,6 +911,12 @@ function M.commit_for_file(path, file, yielding)
   end
 
   return M.head_commit(path, yielding) or "uncommitted"
+end
+
+function M.is_dirty(path, yielding)
+  local output, code = run(path, { "status", "--porcelain=v1", "--untracked-files=all" }, yielding)
+  if code ~= 0 then return nil, output end
+  return trim(output) ~= ""
 end
 
 function M.tree_status(path, yielding)

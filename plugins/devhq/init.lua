@@ -10,6 +10,7 @@ local MessageBox = require "libraries.widget.messagebox"
 local agents = require "plugins.devhq.agents"
 local comments = require "plugins.devhq.comments"
 local file_treeview = require "plugins.devhq.file_treeview"
+local forge = require "plugins.devhq.forge"
 local git = require "plugins.devhq.git"
 local git_doc_view = require "plugins.devhq.git_doc_view"
 local git_history_pane = require "plugins.devhq.git_history_pane"
@@ -26,6 +27,10 @@ config.plugins.devhq = common.merge({
   webview_open_html_files = true,
   webview_open_localhost_urls = true,
   webview_public_url_action = "prompt",
+  forge = { poll_interval = 60 },
+  github = { enabled = false, gh = "gh" },
+  gitlab = { enabled = false, glab = "glab", host = "" },
+  gerrit = { host = "", port = 29418, user = "" },
 }, config.plugins.devhq)
 
 config.plugins.devhq.config_spec = config.plugins.devhq.config_spec or {
@@ -35,6 +40,15 @@ config.plugins.devhq.config_spec = config.plugins.devhq.config_spec or {
   { label = "Open HTML Files In Webview", path = "webview_open_html_files", type = "TOGGLE", default = true },
   { label = "Open Localhost URLs In Webview", path = "webview_open_localhost_urls", type = "TOGGLE", default = true },
   { label = "Public URL Action", path = "webview_public_url_action", type = "STRING", default = "prompt" },
+  { label = "Review Poll Interval (s)", path = "forge.poll_interval", type = "NUMBER", default = 60 },
+  { label = "Enable GitHub Reviews", path = "github.enabled", type = "TOGGLE", default = false },
+  { label = "GitHub CLI Path", path = "github.gh", type = "STRING", default = "gh" },
+  { label = "Enable GitLab Reviews", path = "gitlab.enabled", type = "TOGGLE", default = false },
+  { label = "GitLab CLI Path", path = "gitlab.glab", type = "STRING", default = "glab" },
+  { label = "GitLab Host (optional)", path = "gitlab.host", type = "STRING", default = "" },
+  { label = "Gerrit SSH Host", path = "gerrit.host", type = "STRING", default = "" },
+  { label = "Gerrit SSH Port", path = "gerrit.port", type = "NUMBER", default = 29418 },
+  { label = "Gerrit SSH User", path = "gerrit.user", type = "STRING", default = "" },
 }
 
 local function setup_code_font()
@@ -79,6 +93,11 @@ local function load_state()
       repo.path = repo.cache_path
       repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
       loaded_repos[#loaded_repos + 1] = repo
+    elseif type(repo) == "table" and forge.kinds[repo.kind] and type(repo.nwo) == "string" then
+      repo.cache_path = repo.cache_path or forge.cache_path(repo)
+      repo.path = repo.cache_path
+      repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
+      loaded_repos[#loaded_repos + 1] = repo
     elseif type(repo) == "table" and type(repo.path) == "string" then
       repo.worktrees = agents.sanitize_worktrees(type(repo.worktrees) == "table" and repo.worktrees or {})
       loaded_repos[#loaded_repos + 1] = repo
@@ -91,18 +110,40 @@ end
 
 local repos, expanded, selected_worktree = load_state()
 local worktree_watch = {}
+local state_save_pending = false
+local state_save_error
 
 local function save_state()
-  local fp = io.open(state_filename, "w")
-  if fp then
-    fp:write("return { repos = ", common.serialize(repos), ", expanded = ",
-      common.serialize(expanded), ", selected_worktree = ", common.serialize(selected_worktree), " }\n")
-    fp:close()
+  state_save_pending = true
+  local ok, contents = pcall(function()
+    return "return { repos = " .. common.serialize(repos) .. ", expanded = "
+      .. common.serialize(expanded) .. ", selected_worktree = "
+      .. common.serialize(selected_worktree) .. " }\n"
+  end)
+  local fp, err
+  if ok then fp, err = io.open(state_filename, "w") else err = contents end
+  if not fp then
+    err = tostring(err or "could not open state file")
+    if err ~= state_save_error then core.error("DevHQ state: %s", err) end
+    state_save_error = err
+    return false, err
   end
+  local written, write_err = fp:write(contents)
+  local closed, close_err = fp:close()
+  err = not written and write_err or not closed and close_err or nil
+  if err then
+    err = tostring(err)
+    if err ~= state_save_error then core.error("DevHQ state: %s", err) end
+    state_save_error = err
+    return false, err
+  end
+  state_save_pending = false
+  state_save_error = nil
+  return true
 end
 
 local function refresh_worktrees(repo)
-  if repo.kind == "remote" then
+  if repo.kind == "remote" or forge.kinds[repo.kind] then
     return false
   end
   local old = common.serialize(repo.worktrees or {})
@@ -149,7 +190,7 @@ local function snapshots_equal(a, b)
 end
 
 local function watch_repo_worktrees(repo)
-  if repo.kind == "remote" and not system.get_file_info(repo.path) then return end
+  if (repo.kind == "remote" or forge.kinds[repo.kind]) and not system.get_file_info(repo.path) then return end
   local state = worktree_watch[repo.path]
   if not state then
     local common_dir = git.common_dir(repo.path)
@@ -331,7 +372,6 @@ local function sync_all_remote_repos()
 end
 
 local function create_worktree(repo, branch)
-  if repo and repo.kind == "remote" then return core.error("Remote repos do not support local worktree creation") end
   branch = trim(branch)
   if branch == "" then return core.error("Branch name is required") end
 
@@ -352,13 +392,14 @@ end
 local function prompt_create_worktree(repo)
   if not repo then return core.error("Select a repo in the DevHQ sidebar") end
   if repo.kind == "remote" then return core.error("Remote repos do not support local worktree creation") end
+  local managed_error = forge.mutation_error(repo, "creation")
+  if managed_error then return core.error(managed_error) end
   core.command_view:enter("Branch Name", {
     submit = function(branch) create_worktree(repo, branch) end,
   })
 end
 
 local function remove_worktree(repo, worktree)
-  if repo and repo.kind == "remote" then return core.error("Remote repos do not support local worktree deletion") end
   local ok, output = git.remove_worktree(repo.path, worktree.path)
   if not ok then
     local message = trim(output)
@@ -651,6 +692,8 @@ command.add(nil, {
     if node.repo and node.repo.kind == "remote" then
       return core.error("Remote repos do not support local worktree deletion")
     end
+    local managed_error = forge.mutation_error(node.repo, "deletion")
+    if managed_error then return core.error(managed_error) end
     remove_worktree(node.repo, node.worktree)
   end,
 
@@ -683,11 +726,17 @@ agents.setup({
   end,
 })
 
+forge.setup({
+  repos = repos,
+  save_state = save_state,
+})
+
 local sidebar = ensure_sidebar()
 watch_all_repo_worktrees()
 core.add_thread(function()
   while true do
     refresh_all_worktrees()
+    if state_save_pending then save_state() end
     coroutine.yield(1)
   end
 end)
