@@ -33,6 +33,11 @@ DevHQ connects over SSH, reads remote worktree metadata, and creates a shallow
 local mirror. The mirror lets Lite XL browse files and render diffs locally,
 while terminal commands SSH into the real remote worktree path.
 
+For named-branch worktrees, each sync calculates the parent and merge base on
+the remote server, then fetches only that branch from the server with enough
+history to include the merge base. Detached remote worktrees are ignored.
+Removed worktrees and unrelated branch history are pruned from the mirror.
+
 Refresh every configured remote with `devhq:sync-remote-repos`.
 
 > Remote mirrors represent commits and worktree branch checkouts. Remote
