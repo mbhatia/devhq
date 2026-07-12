@@ -3,8 +3,9 @@
 This document describes the one-time setup required for the GitHub Actions macOS
 installer workflow to sign, notarize, staple, verify, and upload the DevHQ DMG.
 
-Pull-request and manual builds use ad-hoc signing. Trusted `v*` tag builds use
-the secrets below to produce a distributable DMG trusted by Gatekeeper.
+Pull-request builds use ad-hoc signing. Manual workflow runs and trusted `v*`
+tag builds use the secrets below to produce a distributable DMG trusted by
+Gatekeeper.
 
 ## Required Apple account setup
 
@@ -144,8 +145,9 @@ When prompted, enter:
 
 ## 7. Run the workflow
 
-Push a `v*` tag to run the signed release path. Pull requests and manual runs
-exercise the same packaging path without access to the Developer ID identity.
+Run the workflow manually to produce a signed test artifact, or push a `v*` tag
+to produce and publish a signed release. Pull requests exercise the same
+packaging path without access to the Developer ID identity.
 
 When the secrets are configured, the workflow will:
 

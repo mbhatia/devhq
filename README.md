@@ -211,10 +211,11 @@ and manual (`workflow_dispatch`) runs upload `DevHQ-macos-arm64.dmg` as the
 `DevHQ-macos-arm64` workflow artifact for testers. Pushing a `v*` tag builds the
 same DMG and publishes it to the matching GitHub Release with the `gh` CLI.
 
-Pull-request and manual builds use ad-hoc signing. On trusted `v*` tags, the
-workflow uses the configured Developer ID identity, signs nested native code and
-the app with hardened runtime and a timestamp, signs and notarizes the DMG,
-staples the ticket, and verifies the result before publishing it.
+Pull-request builds use ad-hoc signing and are not Gatekeeper-trusted. Manual
+workflow runs and trusted `v*` tags use the configured Developer ID identity,
+sign nested native code and the app with hardened runtime and a timestamp, sign
+and notarize the DMG, staple the ticket, and verify the result. Tagged builds
+also publish the DMG.
 
 Required GitHub secrets for Developer ID signing and notarization:
 
