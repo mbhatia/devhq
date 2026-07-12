@@ -77,8 +77,13 @@ The installer supports macOS and Linux on `x86_64` and `aarch64`. On macOS it
 downloads the official Lite XL DMG and installs the app into `/Applications`.
 It prompts for a command-line tool directory, defaulting to `$HOME/.local/bin`,
 creates that directory if needed, installs `devhq` and `lpm` there, adds the
-DevHQ package repository, and installs the `devhq` package. On Linux, `lpm`
-still installs Lite XL.
+DevHQ package repository, and installs the language, LSP, and `devhq` packages.
+On macOS, it attempts to install optional
+[shpool](https://github.com/shell-pool/shpool) with Homebrew. On Linux, it
+attempts to install `shpool` into the selected directory when Cargo is
+available. A missing package manager, an untrusted Homebrew tap, or an
+installation failure produces a warning and does not stop DevHQ installation.
+On Linux, `lpm` still installs Lite XL.
 
 Run the same command again to upgrade or refresh an existing DevHQ install.
 
@@ -124,11 +129,16 @@ Install Lite XL and DevHQ:
 
 On Linux, install Lite XL with `./lpm install lite-xl` before installing DevHQ.
 
-Optional: install `shpool` for better agent life-cycle management:
+Install the language and LSP plugins:
 
 ```sh
-brew tap shell-pool/shpool
-brew install shpool
+./lpm install meta_languages lsp --assume-yes
+```
+
+Install `shpool` for better agent life-cycle management:
+
+```sh
+cargo install --git https://github.com/shell-pool/shpool --locked shpool
 ```
 
 ## Review Sidebar
@@ -160,6 +170,62 @@ instructions, so the agent can reply to the right thread.
 
 Set `DEVHQ_USERDIR` or `LITE_USERDIR` when the script cannot infer the Lite XL
 user directory from its own path.
+
+### Build a macOS arm64 DMG
+
+From a macOS arm64 machine:
+
+```sh
+./build_installer.sh --dry-run
+./build_installer.sh
+```
+
+The script runs `install.sh` against a staged copy of the official Lite XL app,
+then brands, signs, and repackages it as `dist/DevHQ-macos-arm64.dmg`. LPM
+resolves DevHQ's declared web, terminal, widget, font, language, and LSP
+dependencies directly into the app bundle. The app also contains `devhq`,
+`lpm`, and `shpool` under `Contents/Resources/bin`; local DevHQ agent terminals
+add that directory to `PATH`. A private Lua interpreter is included for the
+`devhq` command. These commands are not added to the user's system-wide shell
+path. The Lite XL license remains in the app and is also visible at the DMG
+root. DevHQ, LPM, shpool, and Lua license texts are stored under
+`Contents/Resources/legal`, with `THIRD-PARTY-NOTICES.md` also visible at the
+DMG root.
+
+Useful overrides:
+
+```sh
+LITE_XL_DMG_URL=https://example.invalid/lite-xl.dmg ./build_installer.sh
+LPM_PATH=/path/to/lpm ./build_installer.sh
+SHPOOL_PATH=/path/to/shpool ./build_installer.sh
+LUA_BIN_PATH=/path/to/lua ./build_installer.sh
+LITE_XL_DMG_PATH=/path/to/lite-xl.dmg ./build_installer.sh --stage-only
+```
+
+By default the app is ad-hoc signed for local packaging. For a real Developer
+ID signature, set `SIGN_IDENTITY="Developer ID Application: ..."` and
+`CODESIGN_OPTIONS="--options runtime --timestamp"`.
+
+GitHub Actions also builds this installer on a macOS arm64 runner. Pull request
+and manual (`workflow_dispatch`) runs upload `DevHQ-macos-arm64.dmg` as the
+`DevHQ-macos-arm64` workflow artifact for testers. Pushing a `v*` tag builds the
+same DMG and publishes it to the matching GitHub Release with the `gh` CLI.
+
+Pull-request builds use ad-hoc signing and are not Gatekeeper-trusted. Manual
+workflow runs and trusted `v*` tags use the configured Developer ID identity,
+sign nested native code and the app with hardened runtime and a timestamp, sign
+and notarize the DMG, staple the ticket, and verify the result. Tagged builds
+also publish the DMG.
+
+Required GitHub secrets for Developer ID signing and notarization:
+
+- `APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64`
+- `APPLE_CERTIFICATE_PASSWORD`
+- `APPLE_KEYCHAIN_PASSWORD`
+- `APPLE_SIGN_IDENTITY`
+- `APPLE_ID`
+- `APPLE_TEAM_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
 
 <!-- ## Configuration -->
 

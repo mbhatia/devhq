@@ -1,0 +1,161 @@
+name: Build macOS installer
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build DevHQ macOS arm64 DMG
+    runs-on: macos-15
+    steps:
+      - name: Checkout DevHQ
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Import Developer ID certificate
+        if: github.event_name != 'pull_request'
+        env:
+          APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_SIGN_IDENTITY: ${{ secrets.APPLE_SIGN_IDENTITY }}
+        run: |
+          if [ -z "${APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64:-}" ]; then
+            echo "error: APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 is required for signed builds" >&2
+            exit 1
+          fi
+
+          for name in APPLE_CERTIFICATE_PASSWORD APPLE_KEYCHAIN_PASSWORD APPLE_SIGN_IDENTITY; do
+            if [ -z "${!name:-}" ]; then
+              echo "error: $name is required when APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64 is set" >&2
+              exit 1
+            fi
+          done
+
+          certificate_path="$RUNNER_TEMP/developer-id-application.p12"
+          keychain_path="$RUNNER_TEMP/app-signing.keychain-db"
+
+          printf '%s' "$APPLE_DEVELOPER_ID_APPLICATION_P12_BASE64" | base64 -D > "$certificate_path"
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          security default-keychain -s "$keychain_path"
+          security find-identity -v -p codesigning "$keychain_path"
+
+          echo "SIGN_IDENTITY=$APPLE_SIGN_IDENTITY" >> "$GITHUB_ENV"
+          echo "CODESIGN_OPTIONS=--options runtime --timestamp" >> "$GITHUB_ENV"
+          echo "DEVELOPER_ID_SIGNING=1" >> "$GITHUB_ENV"
+
+      - name: Build installer
+        env:
+          CODESIGN: "1"
+        run: ./build_installer.sh
+
+      - name: Notarize and staple DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [ "${DEVELOPER_ID_SIGNING:-0}" != "1" ]; then
+            echo "No Developer ID certificate configured; skipping notarization."
+            exit 0
+          fi
+
+          for name in APPLE_ID APPLE_TEAM_ID APPLE_APP_SPECIFIC_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "error: $name is required for notarization" >&2
+              exit 1
+            fi
+          done
+
+          codesign --force --sign "$SIGN_IDENTITY" --timestamp dist/DevHQ-macos-arm64.dmg
+
+          notary_result="$RUNNER_TEMP/notary-result.json"
+          set +e
+          xcrun notarytool submit dist/DevHQ-macos-arm64.dmg \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --wait \
+            --output-format json > "$notary_result"
+          notary_exit=$?
+          set -e
+
+          cat "$notary_result"
+          submission_id="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("id", ""))' "$notary_result")"
+          status="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("status", ""))' "$notary_result")"
+          if [ "$notary_exit" -ne 0 ] || [ "$status" != "Accepted" ]; then
+            if [ -n "$submission_id" ]; then
+              xcrun notarytool log "$submission_id" \
+                --apple-id "$APPLE_ID" \
+                --team-id "$APPLE_TEAM_ID" \
+                --password "$APPLE_APP_SPECIFIC_PASSWORD" || true
+            fi
+            exit 1
+          fi
+
+          xcrun stapler staple dist/DevHQ-macos-arm64.dmg
+          spctl --assess --type open --context context:primary-signature -vv dist/DevHQ-macos-arm64.dmg
+
+      - name: Verify DMG
+        run: |
+          test -f dist/DevHQ-macos-arm64.dmg
+          hdiutil imageinfo dist/DevHQ-macos-arm64.dmg | sed -n '1,40p'
+          mount_dir="$(mktemp -d)"
+          hdiutil attach dist/DevHQ-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount_dir"
+          trap 'hdiutil detach "$mount_dir" >/dev/null || true' EXIT
+          test -f "$mount_dir/Lite XL Licenses.md"
+          test -f "$mount_dir/DevHQ License.txt"
+          test -f "$mount_dir/THIRD-PARTY-NOTICES.md"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lpm-LICENSE"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/shpool-LICENSE"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
+          codesign --verify --deep --strict --verbose=2 "$mount_dir/DevHQ.app"
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: DevHQ-macos-arm64
+          path: dist/DevHQ-macos-arm64.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release asset
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download installer artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: DevHQ-macos-arm64
+          path: release-artifact
+
+      - name: Publish GitHub release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          asset="release-artifact/DevHQ-macos-arm64.dmg"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" "$asset#DevHQ-macos-arm64.dmg" --clobber
+          else
+            gh release create "$tag" "$asset#DevHQ-macos-arm64.dmg" --verify-tag --generate-notes
+          fi

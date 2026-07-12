@@ -1,9 +1,8 @@
 ---
 import { Image } from "astro:assets";
 import Base from "../layouts/Base.astro";
-import CopyCommand from "../components/CopyCommand.astro";
 import { url } from "../lib/url";
-import { INSTALL_CMD, GITHUB_URL } from "../lib/docs";
+import { MACOS_DMG_URL } from "../lib/docs";
 import cover from "../assets/devhq-cover.png";
 
 const pillars = [
@@ -68,12 +67,11 @@ const features = [
         and talk to agents.
       </p>
       <div class="hero-cta">
-        <CopyCommand command={INSTALL_CMD} />
         <div class="hero-actions">
-          <a class="btn btn-primary" href={url("/docs/getting-started")}>Get started</a>
-          <a class="btn btn-ghost" href={GITHUB_URL} rel="noopener" target="_blank">View source</a>
+          <a class="btn btn-primary" href={MACOS_DMG_URL}>Download for macOS</a>
+          <a class="btn btn-ghost" href={url("/docs/getting-started#linux")}>Other platforms</a>
         </div>
-        <p class="hero-note mono">macOS &amp; Linux · a Lite XL plugin · open source</p>
+        <p class="hero-note mono">macOS · Apple silicon · signed &amp; notarized · open source</p>
       </div>
     </div>
     <div class="hero-mock">
@@ -105,7 +103,7 @@ const features = [
   <section id="features" class="section page">
     <div class="section-head">
       <p class="eyebrow">What it does</p>
-      <h2>Four moves, one pane.</h2>
+      <h2>Full developmet workflow, one pane.</h2>
       <p>The loop a developer runs all day — contained in a single pane of glass.</p>
     </div>
     <div class="pillars">
@@ -158,15 +156,14 @@ const features = [
   <section class="section page">
     <div class="install">
       <p class="eyebrow">Get started</p>
-      <h2>One command.</h2>
+      <h2>Install DevHQ.</h2>
       <p class="muted">
-        The installer fetches Lite XL, adds the DevHQ repository, and installs
-        the plugin. macOS and Linux, x86_64 and aarch64.
+        Download the complete macOS app in one click. Linux users can install
+        Lite XL, DevHQ, and its command-line tools with the script installer.
       </p>
-      <CopyCommand command={INSTALL_CMD} />
       <div class="hero-actions">
-        <a class="btn btn-primary" href={url("/docs/getting-started")}>Read the guide</a>
-        <a class="btn btn-ghost" href={url("/docs/commands")}>Browse commands</a>
+        <a class="btn btn-primary" href={MACOS_DMG_URL}>Download for macOS</a>
+        <a class="btn btn-ghost" href={url("/docs/getting-started#linux")}>Other platforms</a>
       </div>
     </div>
   </section>

@@ -13,3 +13,8 @@ user_settings.lua
 ws/
 libraries/ghostty_lxl/
 plugins/ghostty/
+
+dist/
+
+__pycache__/
+*.pyc
