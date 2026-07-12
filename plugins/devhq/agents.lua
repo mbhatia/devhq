@@ -119,11 +119,14 @@ local function agent_options(w, a, cmd)
       agent_close_on_exit = "never",
     }
   end
+  local bundled_bin = DATADIR .. PATHSEP .. "bin"
+  local inherited_path = os.getenv("PATH") or ""
   return {
     kind = "agent", title = a.profile .. ": " .. a.name, cwd = w.path,
     command = cmd, shell = true, agent_close_on_exit = "never",
     env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a),
-      THREAD_ID = a.thread_id or "" },
+      THREAD_ID = a.thread_id or "",
+      PATH = bundled_bin .. (inherited_path ~= "" and ":" .. inherited_path or "") },
   }
 end
 

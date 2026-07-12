@@ -4,6 +4,11 @@ set -eu
 DEVHQ_REPOSITORY_URL="${DEVHQ_REPOSITORY_URL:-https://github.com/mbhatia/devhq}"
 DEVHQ_LPM_RELEASE_URL="${DEVHQ_LPM_RELEASE_URL:-https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest}"
 DEVHQ_SHPOOL_REPOSITORY_URL="${DEVHQ_SHPOOL_REPOSITORY_URL:-https://github.com/shell-pool/shpool}"
+DEVHQ_SHPOOL_REV="${DEVHQ_SHPOOL_REV:-fe2d11595ff255810523b0868159dec051e303f1}"
+DEVHQ_SHPOOL_PATH="${DEVHQ_SHPOOL_PATH:-}"
+DEVHQ_LUA_VERSION="${DEVHQ_LUA_VERSION:-5.4.8}"
+DEVHQ_LUA_SHA256="${DEVHQ_LUA_SHA256:-4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae}"
+DEVHQ_LUA_PATH="${DEVHQ_LUA_PATH:-}"
 DEVHQ_CLI_URL="${DEVHQ_CLI_URL:-}"
 DEVHQ_BIN_DIR="${DEVHQ_BIN_DIR:-}"
 DEVHQ_APP_PATH="${DEVHQ_APP_PATH:-}"
@@ -195,6 +200,61 @@ prepare_lpm() {
   log "Downloading Lite XL Package Manager..."
   download "$lpm_url" "$lpm"
   chmod +x "$lpm"
+}
+
+install_bundled_cli_tools() {
+  bin_dir="$DEVHQ_APP_PATH/Contents/Resources/bin"
+  licenses_dir="$DEVHQ_APP_PATH/Contents/Resources/third-party-licenses"
+  mkdir -p "$bin_dir"
+  mkdir -p "$licenses_dir"
+
+  log "Bundling command-line tools..."
+  cp "$lpm" "$bin_dir/lpm"
+  chmod +x "$bin_dir/lpm"
+  install_devhq_cli
+
+  shpool="$bin_dir/shpool"
+  if [ -n "$DEVHQ_SHPOOL_PATH" ]; then
+    [ -f "$DEVHQ_SHPOOL_PATH" ] || die "missing shpool binary: $DEVHQ_SHPOOL_PATH"
+    cp "$DEVHQ_SHPOOL_PATH" "$shpool"
+  else
+    need_cmd cargo
+    shpool_root="$tmpdir/shpool"
+    log "Building bundled shpool..."
+    cargo install \
+      --git "$DEVHQ_SHPOOL_REPOSITORY_URL" \
+      --rev "$DEVHQ_SHPOOL_REV" \
+      --root "$shpool_root" \
+      --locked \
+      shpool
+    cp "$shpool_root/bin/shpool" "$shpool"
+  fi
+  chmod +x "$shpool"
+  download \
+    "https://raw.githubusercontent.com/shell-pool/shpool/$DEVHQ_SHPOOL_REV/LICENSE" \
+    "$licenses_dir/shpool-LICENSE"
+
+  lua="$bin_dir/lua"
+  if [ -n "$DEVHQ_LUA_PATH" ]; then
+    [ -f "$DEVHQ_LUA_PATH" ] || die "missing Lua binary: $DEVHQ_LUA_PATH"
+    cp "$DEVHQ_LUA_PATH" "$lua"
+  else
+    need_cmd make
+    need_cmd shasum
+    need_cmd tar
+    lua_archive="$tmpdir/lua.tar.gz"
+    lua_source="$tmpdir/lua-$DEVHQ_LUA_VERSION"
+    log "Building bundled Lua..."
+    download "https://www.lua.org/ftp/lua-$DEVHQ_LUA_VERSION.tar.gz" "$lua_archive"
+    lua_sha256="$(shasum -a 256 "$lua_archive" | awk '{print $1}')"
+    [ "$lua_sha256" = "$DEVHQ_LUA_SHA256" ] \
+      || die "Lua SHA-256 mismatch: expected $DEVHQ_LUA_SHA256, got $lua_sha256"
+    tar -xzf "$lua_archive" -C "$tmpdir"
+    make -C "$lua_source" macosx
+    cp "$lua_source/src/lua" "$lua"
+    cp "$lua_source/doc/readme.html" "$licenses_dir/lua-LICENSE.html"
+  fi
+  chmod +x "$lua"
 }
 
 run_lpm() {
@@ -398,6 +458,10 @@ fi
 
 log "Installing Lite XL..."
 install_lite_xl
+
+if [ -n "$DEVHQ_APP_PATH" ]; then
+  install_bundled_cli_tools
+fi
 
 log "Adding DevHQ package repository..."
 if ! run_lpm repo add "$DEVHQ_REPOSITORY_URL" --assume-yes; then

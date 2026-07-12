@@ -13,6 +13,8 @@ LITE_XL_VERSION="${LITE_XL_VERSION:-v2.1.8}"
 LITE_XL_DMG_URL="${LITE_XL_DMG_URL:-}"
 LITE_XL_DMG_PATH="${LITE_XL_DMG_PATH:-}"
 LPM_PATH="${LPM_PATH:-}"
+SHPOOL_PATH="${SHPOOL_PATH:-}"
+LUA_BIN_PATH="${LUA_BIN_PATH:-}"
 CODESIGN="${CODESIGN:-1}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 CODESIGN_OPTIONS="${CODESIGN_OPTIONS:-}"
@@ -35,6 +37,8 @@ Environment overrides:
   LITE_XL_DMG_PATH  Existing Lite XL DMG; otherwise it is downloaded
   LITE_XL_DMG_URL   Alternate Lite XL DMG URL
   LPM_PATH           Existing lpm binary; otherwise it is downloaded
+  SHPOOL_PATH        Existing arm64 shpool binary; otherwise it is built
+  LUA_BIN_PATH        Existing standalone arm64 Lua; otherwise it is built
   DIST_DIR           Output directory; default: $DIST_DIR
   WORK_DIR           Staging directory; default: $WORK_DIR
   OUTPUT_DMG         Output path; default: $OUTPUT_DMG
@@ -64,6 +68,8 @@ esac
 [ -f "$APP_ICON_PATH" ] || die "missing app icon: $APP_ICON_PATH"
 [ -z "$LITE_XL_DMG_PATH" ] || [ -f "$LITE_XL_DMG_PATH" ] || die "missing Lite XL DMG: $LITE_XL_DMG_PATH"
 [ -z "$LPM_PATH" ] || [ -f "$LPM_PATH" ] || die "missing lpm binary: $LPM_PATH"
+[ -z "$SHPOOL_PATH" ] || [ -f "$SHPOOL_PATH" ] || die "missing shpool binary: $SHPOOL_PATH"
+[ -z "$LUA_BIN_PATH" ] || [ -f "$LUA_BIN_PATH" ] || die "missing Lua binary: $LUA_BIN_PATH"
 
 log "DevHQ macOS package plan:"
 log "  App:       $STAGED_APP"
@@ -92,6 +98,8 @@ log "Installing DevHQ into the staged app..."
 DEVHQ_REPOSITORY_URL="$SCRIPT_DIR" \
 DEVHQ_APP_PATH="$STAGED_APP" \
 DEVHQ_LPM_PATH="$LPM_PATH" \
+DEVHQ_SHPOOL_PATH="$SHPOOL_PATH" \
+DEVHQ_LUA_PATH="$LUA_BIN_PATH" \
 LITE_XL_VERSION="$LITE_XL_VERSION" \
 LITE_XL_DMG_URL="$LITE_XL_DMG_URL" \
 LITE_XL_DMG_PATH="$LITE_XL_DMG_PATH" \
@@ -105,6 +113,10 @@ plist="$STAGED_APP/Contents/Info.plist"
 [ -d "$resources_dir/plugins/ghostty" ] || die "staged app is missing ghostty"
 [ -f "$resources_dir/libraries/web_lxl/init.lib" ] || die "staged app is missing web_lxl"
 [ -f "$resources_dir/libraries/ghostty_lxl/init.lib" ] || die "staged app is missing ghostty_lxl"
+[ -x "$resources_dir/bin/devhq" ] || die "staged app is missing the devhq CLI"
+[ -x "$resources_dir/bin/lpm" ] || die "staged app is missing the lpm CLI"
+[ -x "$resources_dir/bin/shpool" ] || die "staged app is missing the shpool CLI"
+[ -x "$resources_dir/bin/lua" ] || die "staged app is missing the Lua interpreter"
 [ -f "$resources_dir/licenses.md" ] || die "staged app is missing Lite XL licenses"
 [ -f "$plist" ] || die "staged app is missing Info.plist"
 
