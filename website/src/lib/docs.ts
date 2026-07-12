@@ -7,9 +7,9 @@ export interface DocLink {
 
 export const docsNav: DocLink[] = [
   {
-    title: "Getting started",
+    title: "Installation",
     slug: "getting-started",
-    summary: "Install DevHQ and open your first worktree.",
+    summary: "Install DevHQ on macOS or Linux.",
   },
   {
     title: "Concepts",
@@ -39,5 +39,4 @@ export const docsNav: DocLink[] = [
 ];
 
 export const GITHUB_URL = "https://github.com/mbhatia/devhq";
-export const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/mbhatia/devhq/main/install.sh | sh";
+export const MACOS_DMG_URL = `${GITHUB_URL}/releases/latest/download/DevHQ-macos-arm64.dmg`;
