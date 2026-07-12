@@ -188,7 +188,9 @@ dependencies directly into the app bundle. The app also contains `devhq`,
 add that directory to `PATH`. A private Lua interpreter is included for the
 `devhq` command. These commands are not added to the user's system-wide shell
 path. The Lite XL license remains in the app and is also visible at the DMG
-root.
+root. DevHQ, LPM, shpool, and Lua license texts are stored under
+`Contents/Resources/legal`, with `THIRD-PARTY-NOTICES.md` also visible at the
+DMG root.
 
 Useful overrides:
 

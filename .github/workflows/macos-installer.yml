@@ -121,6 +121,11 @@ jobs:
           hdiutil attach dist/DevHQ-macos-arm64.dmg -nobrowse -readonly -mountpoint "$mount_dir"
           trap 'hdiutil detach "$mount_dir" >/dev/null || true' EXIT
           test -f "$mount_dir/Lite XL Licenses.md"
+          test -f "$mount_dir/DevHQ License.txt"
+          test -f "$mount_dir/THIRD-PARTY-NOTICES.md"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lpm-LICENSE"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/shpool-LICENSE"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
           codesign --verify --deep --strict --verbose=2 "$mount_dir/DevHQ.app"
 
       - name: Upload installer artifact

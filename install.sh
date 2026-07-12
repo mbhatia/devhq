@@ -3,12 +3,14 @@ set -eu
 
 DEVHQ_REPOSITORY_URL="${DEVHQ_REPOSITORY_URL:-https://github.com/mbhatia/devhq}"
 DEVHQ_LPM_RELEASE_URL="${DEVHQ_LPM_RELEASE_URL:-https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest}"
+DEVHQ_LPM_LICENSE_URL="${DEVHQ_LPM_LICENSE_URL:-https://raw.githubusercontent.com/lite-xl/lite-xl-plugin-manager/latest/LICENSE}"
 DEVHQ_SHPOOL_REPOSITORY_URL="${DEVHQ_SHPOOL_REPOSITORY_URL:-https://github.com/shell-pool/shpool}"
 DEVHQ_SHPOOL_REV="${DEVHQ_SHPOOL_REV:-fe2d11595ff255810523b0868159dec051e303f1}"
 DEVHQ_SHPOOL_PATH="${DEVHQ_SHPOOL_PATH:-}"
 DEVHQ_LUA_VERSION="${DEVHQ_LUA_VERSION:-5.4.8}"
 DEVHQ_LUA_SHA256="${DEVHQ_LUA_SHA256:-4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae}"
 DEVHQ_LUA_PATH="${DEVHQ_LUA_PATH:-}"
+DEVHQ_LUA_LICENSE_URL="${DEVHQ_LUA_LICENSE_URL:-https://www.lua.org/manual/5.4/readme.html}"
 DEVHQ_CLI_URL="${DEVHQ_CLI_URL:-}"
 DEVHQ_BIN_DIR="${DEVHQ_BIN_DIR:-}"
 DEVHQ_APP_PATH="${DEVHQ_APP_PATH:-}"
@@ -204,14 +206,15 @@ prepare_lpm() {
 
 install_bundled_cli_tools() {
   bin_dir="$DEVHQ_APP_PATH/Contents/Resources/bin"
-  licenses_dir="$DEVHQ_APP_PATH/Contents/Resources/third-party-licenses"
+  legal_dir="$DEVHQ_APP_PATH/Contents/Resources/legal"
   mkdir -p "$bin_dir"
-  mkdir -p "$licenses_dir"
+  mkdir -p "$legal_dir"
 
   log "Bundling command-line tools..."
   cp "$lpm" "$bin_dir/lpm"
   chmod +x "$bin_dir/lpm"
   install_devhq_cli
+  download "$DEVHQ_LPM_LICENSE_URL" "$legal_dir/lpm-LICENSE"
 
   shpool="$bin_dir/shpool"
   if [ -n "$DEVHQ_SHPOOL_PATH" ]; then
@@ -232,7 +235,7 @@ install_bundled_cli_tools() {
   chmod +x "$shpool"
   download \
     "https://raw.githubusercontent.com/shell-pool/shpool/$DEVHQ_SHPOOL_REV/LICENSE" \
-    "$licenses_dir/shpool-LICENSE"
+    "$legal_dir/shpool-LICENSE"
 
   lua="$bin_dir/lua"
   if [ -n "$DEVHQ_LUA_PATH" ]; then
@@ -252,9 +255,20 @@ install_bundled_cli_tools() {
     tar -xzf "$lua_archive" -C "$tmpdir"
     make -C "$lua_source" macosx
     cp "$lua_source/src/lua" "$lua"
-    cp "$lua_source/doc/readme.html" "$licenses_dir/lua-LICENSE.html"
   fi
   chmod +x "$lua"
+  download "$DEVHQ_LUA_LICENSE_URL" "$legal_dir/lua-LICENSE.html"
+
+  repo_dir="$(expand_home_path "$DEVHQ_REPOSITORY_URL")"
+  [ -f "$repo_dir/LICENSE" ] || die "missing DevHQ license: $repo_dir/LICENSE"
+  [ -f "$repo_dir/NOTICE" ] || die "missing DevHQ notice: $repo_dir/NOTICE"
+  [ -f "$repo_dir/TRADEMARK.md" ] || die "missing DevHQ trademark notice: $repo_dir/TRADEMARK.md"
+  [ -f "$repo_dir/assets/THIRD-PARTY-NOTICES.md" ] \
+    || die "missing third-party notices: $repo_dir/assets/THIRD-PARTY-NOTICES.md"
+  cp "$repo_dir/LICENSE" "$legal_dir/DevHQ-LICENSE"
+  cp "$repo_dir/NOTICE" "$legal_dir/DevHQ-NOTICE"
+  cp "$repo_dir/TRADEMARK.md" "$legal_dir/DevHQ-TRADEMARK.md"
+  cp "$repo_dir/assets/THIRD-PARTY-NOTICES.md" "$legal_dir/THIRD-PARTY-NOTICES.md"
 }
 
 run_lpm() {
