@@ -128,6 +128,9 @@ local function decoder(text)
   return parse_value()
 end
 
+M.decode = decoder
+M.encode = encode
+
 local function workspace_dir()
   local dir = USERDIR .. PATHSEP .. "ws"
   if not system.get_file_info(dir) then
@@ -528,19 +531,49 @@ local function open_blob(text)
   core.root_view:open_doc(doc)
 end
 
+local posting = false
+
 function M.post_all_comments()
   local postable = postable_threads()
   if #postable == 0 then return core.error("No draft comments to post") end
   local targets, by_name = { "text" }, {}
+  local forge = require "plugins.devhq.forge"
+  local forge_repo, forge_wt = forge.change_for_worktree(worktree())
+  local forge_label
+  if forge_repo then
+    forge_label = forge.post_label(forge_repo, forge_wt)
+    targets[#targets + 1] = forge_label
+  end
   for _, item in ipairs(agents.active_for_worktree(worktree())) do
     local name = item.label
     targets[#targets + 1], by_name[name] = name, item
   end
   core.command_view:enter("Post Comments", {
     suggest = function(text) return common.fuzzy_match(targets, text) end,
-    validate = function(text, item) return (item and item.text == "text") or by_name[item and item.text or text] ~= nil end,
+    validate = function(text, item)
+      local sel = item and item.text or text
+      return sel == "text" or sel == forge_label or by_name[sel] ~= nil
+    end,
     submit = function(text, item)
       local selected = item and item.text or text
+      if selected == forge_label then
+        if posting then return core.error("Already posting comments") end
+        posting = true
+        core.add_thread(function()
+          local ok, err = pcall(function()
+            local head = git.head_commit(forge_wt.path, true)
+            for _, comment in ipairs(postable) do
+              local posted, perr = forge.post_thread(forge_repo, forge_wt, comment, head, true)
+              if posted then mark_messages_open(comment)
+              else core.error("%s post failed: %s", forge_label, tostring(perr)) end
+            end
+            save()
+          end)
+          posting = false
+          if not ok then core.error("%s post failed: %s", forge_label, tostring(err)) end
+        end)
+        return
+      end
       local blob = blob_for(postable)
       if selected == "text" then
         open_blob(blob)
