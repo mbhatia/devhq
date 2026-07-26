@@ -59,19 +59,23 @@ const features = [
   <!-- hero -->
   <section class="hero page">
     <div class="hero-copy">
-      <p class="eyebrow">A control plane for developers</p>
-      <h1>Supervise parallel work.</h1>
-      <p class="lede">
-        One developer. Many agents, branches, and machines. DevHQ is the layer
-        above the editor — where you track work, switch context, review output,
-        and talk to agents.
-      </p>
-      <div class="hero-cta">
-        <div class="hero-actions">
-          <a class="btn btn-primary" href={MACOS_DMG_URL}>Download for macOS</a>
-          <a class="btn btn-ghost" href={url("/docs/getting-started#linux")}>Other platforms</a>
+      <div class="hero-heading">
+        <p class="eyebrow">A control plane for developers</p>
+        <h1>Supervise parallel work.</h1>
+      </div>
+      <div class="hero-details">
+        <p class="lede">
+          One developer. Many agents, branches, and machines. DevHQ is the layer
+          above the editor — where you track work, switch context, review output,
+          and talk to agents.
+        </p>
+        <div class="hero-cta">
+          <div class="hero-actions">
+            <a class="btn btn-primary" href={MACOS_DMG_URL}>Download for macOS</a>
+            <a class="btn btn-ghost" href={url("/docs/getting-started#linux")}>Other platforms</a>
+          </div>
+          <p class="hero-note mono">macOS · Apple silicon · signed &amp; notarized · open source</p>
         </div>
-        <p class="hero-note mono">macOS · Apple silicon · signed &amp; notarized · open source</p>
       </div>
     </div>
     <div class="hero-mock">
@@ -79,7 +83,7 @@ const features = [
         src={cover}
         alt="DevHQ running in Lite XL: a repository and worktree sidebar, an open diff, and an agent terminal."
         widths={[640, 960, 1280, 1728]}
-        sizes="(max-width: 900px) 92vw, 52vw"
+        sizes="(max-width: 1128px) calc(100vw - 48px), 1080px"
         loading="eager"
         class="cover"
       />
@@ -172,19 +176,20 @@ const features = [
 <style>
   /* hero */
   .hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-    gap: 56px;
-    align-items: center;
     padding-top: 72px;
     padding-bottom: 80px;
+  }
+  .hero-copy {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 56px;
+    align-items: start;
   }
   .hero h1 {
     font-size: clamp(40px, 6vw, 66px);
     margin: 16px 0 0;
   }
   .lede {
-    margin-top: 22px;
     max-width: 520px;
     font-size: 19px;
     color: var(--muted);
@@ -205,6 +210,9 @@ const features = [
     margin-top: 4px;
     font-size: 12.5px;
     color: var(--faint);
+  }
+  .hero-mock {
+    margin-top: 56px;
   }
 
   /* hero screenshot */
@@ -325,13 +333,18 @@ const features = [
   }
 
   @media (max-width: 900px) {
-    .hero,
+    .hero-copy,
     .positioning {
       grid-template-columns: 1fr;
     }
     .hero {
       padding-top: 48px;
-      gap: 40px;
+    }
+    .hero-copy {
+      gap: 28px;
+    }
+    .hero-mock {
+      margin-top: 40px;
     }
     .pillars,
     .feature-grid {
