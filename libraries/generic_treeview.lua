@@ -129,12 +129,27 @@ function TreeView:get_node_label(node)
   return tostring(node and (node.label or node.name or node.id) or "")
 end
 
+function TreeView:get_item_label(item)
+  if not item or not item.nodes then
+    return self:get_node_label(item and item.node)
+  end
+  local labels = {}
+  for _, node in ipairs(item.nodes) do
+    labels[#labels + 1] = self:get_node_label(node)
+  end
+  return table.concat(labels, "/")
+end
+
 function TreeView:get_node_kind(node)
   return node and (node.kind or node.type) or "custom"
 end
 
 function TreeView:get_node_children(node)
   return sorted_children(call(node and node.children, node))
+end
+
+function TreeView:is_container(node)
+  return node ~= nil and (self:get_node_kind(node) == "dir" or node.children ~= nil)
 end
 
 function TreeView:can_expand(node)
@@ -144,7 +159,7 @@ function TreeView:can_expand(node)
   if node.can_expand ~= nil then
     return not not call(node.can_expand, node)
   end
-  return self:get_node_kind(node) == "dir" or node.children ~= nil
+  return self:is_container(node)
 end
 
 function TreeView:is_expanded(node)
@@ -179,10 +194,27 @@ end
 function TreeView:rows()
   local rows = {}
   local function walk(node, depth, parent)
-    local row = { node = node, depth = depth, parent = parent }
+    local nodes = { node }
+    local visible_children
+    -- A parent with one container child adds no useful row of its own.
+    while self:is_container(node) do
+      local children = self:get_node_children(node)
+      if #children ~= 1 or not self:is_container(children[1]) then
+        visible_children = children
+        break
+      end
+      node = children[1]
+      nodes[#nodes + 1] = node
+    end
+    local row = {
+      node = node,
+      nodes = #nodes > 1 and nodes or nil,
+      depth = depth,
+      parent = parent,
+    }
     rows[#rows + 1] = row
     if self:is_expanded(node) then
-      for _, child in ipairs(self:get_node_children(node)) do
+      for _, child in ipairs(visible_children or self:get_node_children(node)) do
         walk(child, depth + 1, row)
       end
     end
@@ -191,6 +223,15 @@ function TreeView:rows()
     walk(root, 0, nil)
   end
   return rows
+end
+
+function TreeView:item_has_id(item, id)
+  if not item then return false end
+  if self:get_node_id(item.node) == id then return true end
+  for _, node in ipairs(item.nodes or {}) do
+    if self:get_node_id(node) == id then return true end
+  end
+  return false
 end
 
 function TreeView:each_item()
@@ -228,7 +269,7 @@ end
 function TreeView:set_selection_to_id(id, expand, scroll_to, instant)
   local selected, selected_y
   for item, _, y in self:each_item() do
-    if self:get_node_id(item.node) == id then
+    if self:item_has_id(item, id) then
       selected, selected_y = item, y
       break
     end
@@ -243,7 +284,7 @@ function TreeView:get_text_bounding_box(item, x, y, w, h)
   local icon_width = style.icon_font:get_width("D")
   local xoffset = item.depth * style.padding.x + style.padding.x + icon_width
   x = x + xoffset
-  w = style.font:get_width(self:get_node_label(item.node)) + 2 * style.padding.x
+  w = style.font:get_width(self:get_item_label(item)) + 2 * style.padding.x
   return x, y, w, h
 end
 
@@ -341,7 +382,7 @@ end
 
 function TreeView:draw_tooltip()
   local node = self.hovered_item and self.hovered_item.node
-  local text = call(node and node.tooltip, node) or self:get_node_label(node)
+  local text = call(node and node.tooltip, node) or self:get_item_label(self.hovered_item)
   local lines = split_lines(text)
   local line_h = style.font:get_height()
   local w, h = 0, line_h * #lines
@@ -386,7 +427,7 @@ end
 
 function TreeView:get_item_text(item, active, hovered)
   local node = item.node
-  local text = self:get_node_label(node)
+  local text = self:get_item_label(item)
   local font = style.font
   local color = (active or hovered) and style.accent or style.text
   if node and node.color then
@@ -446,7 +487,7 @@ function TreeView:draw()
 
   for item, x, y, w, h in self:each_item() do
     if y + h >= _y and y < _y + _h then
-      self:draw_item(item, self:get_node_id(item.node) == self.selected_id, item == self.hovered_item, x, y, w, h)
+      self:draw_item(item, self:item_has_id(item, self.selected_id), item == self.hovered_item, x, y, w, h)
     end
   end
 
@@ -466,7 +507,7 @@ function TreeView:get_item(item, where)
     if not item and where >= 0 then
       return it, x, y, w, h
     end
-    if item == it or (item_id and self:get_node_id(it.node) == item_id) then
+    if item == it or (item_id and self:item_has_id(it, item_id)) then
       if where < 0 and last_item then
         break
       elseif where == 0 or (where < 0 and not last_item) then
@@ -493,7 +534,7 @@ function TreeView:get_parent(item)
   local parent = item and item.parent
   if not parent then return end
   for it, _, y in self:each_item() do
-    if it == parent or self:get_node_id(it.node) == self:get_node_id(parent.node) then
+    if it == parent or self:item_has_id(it, self:get_node_id(parent.node)) then
       return it, y
     end
   end
@@ -504,11 +545,21 @@ function TreeView:toggle_expand(toggle, item)
   if not item then return end
   local node = item.node
   if self:can_expand(node) then
+    local expanded
     if type(toggle) == "boolean" then
-      self:set_expanded(node, toggle)
+      expanded = toggle
     else
-      self:set_expanded(node, not self:is_expanded(node))
+      expanded = not self:is_expanded(node)
     end
+    if expanded and item.nodes then
+      for _, path_node in ipairs(item.nodes) do
+        self:set_expanded(path_node, true)
+      end
+    else
+      self:set_expanded(node, expanded)
+    end
+    local current = self:get_item(item, 0)
+    if current then self.selected_item = current end
   end
 end
 

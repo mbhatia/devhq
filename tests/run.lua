@@ -1,7 +1,12 @@
 PATHSEP = PATHSEP or "/"
 USERDIR = USERDIR or "."
+SCALE = SCALE or 1
 
 package.path = "./?.lua;" .. package.path
+
+package.preload["core"] = function()
+  return {}
+end
 
 package.preload["process"] = function()
   return {}
@@ -19,6 +24,30 @@ package.preload["core.common"] = function()
   end
 
   return M
+end
+
+package.preload["core.style"] = function()
+  local font = {
+    get_height = function() return 12 end,
+    get_width = function(_, text) return #tostring(text or "") end,
+  }
+  return {
+    font = font,
+    icon_font = font,
+    padding = { x = 1, y = 1 },
+  }
+end
+
+package.preload["core.view"] = function()
+  local View = {}
+
+  function View:extend()
+    local child = { super = self }
+    child.__index = child
+    return setmetatable(child, { __index = self })
+  end
+
+  return View
 end
 
 local function assert_equal(actual, expected, message)
@@ -40,6 +69,17 @@ local function assert_not_contains(list, value, message)
       error((message or "unexpected value") .. ": " .. tostring(value), 2)
     end
   end
+end
+
+local function tree_view(roots, default_expanded)
+  local TreeView = require "libraries.generic_treeview"
+  return setmetatable({
+    backend = { roots = function() return roots end },
+    expanded = {},
+    default_expanded = default_expanded,
+    size = { x = 100, y = 100 },
+    get_content_offset = function() return 0, 0 end,
+  }, { __index = TreeView })
 end
 
 local function test_remote_mirror_uses_detached_checkout()
@@ -149,6 +189,89 @@ local function test_duplicate_local_remote_branch_grouping()
   end
 end
 
+local function test_treeview_compacts_single_child_container_chains()
+  local files = {
+    { id = "one", label = "one.txt", kind = "file", order = 1 },
+    { id = "two", label = "two.txt", kind = "file", order = 2 },
+  }
+  local folder2 = { id = "folder2", label = "folder2", kind = "bucket", children = files }
+  local folder1 = { id = "folder1", label = "folder1", kind = "group", children = { folder2 } }
+  local workspace = { id = "workspace", label = "workspace", kind = "workspace", children = { folder1 } }
+  local view = tree_view({ workspace }, true)
+
+  local rows = view:rows()
+  assert_equal(#rows, 3, "compacted chain and its two leaves should produce three rows")
+  assert_equal(view:get_item_label(rows[1]), "workspace/folder1/folder2", "compacted row label")
+  assert_equal(rows[1].node, folder2, "compacted row acts on the innermost container")
+  assert_equal(rows[2].depth, 1, "children remain one level below the compacted row")
+  assert_equal(rows[3].depth, 1, "all compacted-row children have the same depth")
+  assert_equal(view:item_has_id(rows[1], "workspace"), true, "compacted row retains the root id")
+  assert_equal(view:item_has_id(rows[1], "folder1"), true, "compacted row retains intermediate ids")
+  assert_equal(view:item_has_id(rows[1], "folder2"), true, "compacted row retains the innermost id")
+end
+
+local function test_treeview_does_not_compact_a_leaf_child()
+  local leaf = { id = "leaf", label = "leaf", kind = "record" }
+  local container = { id = "container", label = "container", kind = "section", children = { leaf } }
+  local view = tree_view({ container }, true)
+
+  local rows = view:rows()
+  assert_equal(#rows, 2, "a container and its leaf remain separate rows")
+  assert_equal(view:get_item_label(rows[1]), "container", "leaf child is not folded into its parent")
+  assert_equal(view:get_item_label(rows[2]), "leaf", "leaf keeps its own row")
+end
+
+local function test_treeview_compacts_an_empty_container_child()
+  local worktree = {
+    id = "worktree1",
+    label = "worktree1",
+    kind = "worktree",
+    can_expand = function() return false end,
+    children = function() return {} end,
+  }
+  local repo = { id = "repo1", label = "repo1", kind = "repo", children = { worktree } }
+  local view = tree_view({ repo }, false)
+
+  local rows = view:rows()
+  assert_equal(#rows, 1, "an initially collapsed empty container child is compacted with its parent")
+  assert_equal(view:get_item_label(rows[1]), "repo1/worktree1", "initial empty container row label")
+  assert_equal(view:can_expand(worktree), false, "empty container remains non-expandable")
+end
+
+local function test_treeview_does_not_compact_branched_containers()
+  local left = { id = "left", label = "left", kind = "section", children = {} }
+  local right = { id = "right", label = "right", kind = "section", children = {} }
+  local root = {
+    id = "root",
+    label = "root",
+    kind = "section",
+    children = { left, right },
+  }
+  local view = tree_view({ root }, true)
+
+  local rows = view:rows()
+  assert_equal(#rows, 3, "a branched parent and both children keep separate rows")
+  assert_equal(view:get_item_label(rows[1]), "root", "branched parent is not compacted")
+end
+
+local function test_treeview_expands_a_compacted_container_chain()
+  local leaf = { id = "leaf", label = "leaf", kind = "record" }
+  local child = { id = "child", label = "child", kind = "section", children = { leaf } }
+  local root = { id = "root", label = "root", kind = "section", children = { child } }
+  local view = tree_view({ root }, false)
+
+  view.selected_item = view:rows()[1]
+  view.selected_id = "root"
+  assert_equal(view:get_item_label(view.selected_item), "root/child",
+    "collapsed container chain is compacted on its initial render")
+  view:toggle_expand(true)
+
+  assert_equal(view:get_item_label(view.selected_item), "root/child",
+    "selection remains on the compacted row after expansion")
+  assert_equal(view.expanded.root, true, "expanding a compacted row expands its hidden parent")
+  assert_equal(view.expanded.child, true, "expanding a compacted row expands its visible container")
+end
+
 local tests = {
   test_remote_mirror_uses_detached_checkout,
   test_remote_mirror_worktree_add_uses_detached_checkout,
@@ -157,6 +280,11 @@ local tests = {
   test_remote_scalar_output_ignores_ssh_warnings,
   test_remote_mirror_parent_candidates_match_local_precedence,
   test_duplicate_local_remote_branch_grouping,
+  test_treeview_compacts_single_child_container_chains,
+  test_treeview_does_not_compact_a_leaf_child,
+  test_treeview_compacts_an_empty_container_child,
+  test_treeview_does_not_compact_branched_containers,
+  test_treeview_expands_a_compacted_container_chain,
 }
 
 for _, test in ipairs(tests) do
