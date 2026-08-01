@@ -196,8 +196,8 @@ function TreeView:rows()
   local function walk(node, depth, parent)
     local nodes = { node }
     local visible_children
-    -- An expanded parent with one container child adds no useful row of its own.
-    while self:is_expanded(node) do
+    -- A parent with one container child adds no useful row of its own.
+    while self:is_container(node) do
       local children = self:get_node_children(node)
       if #children ~= 1 or not self:is_container(children[1]) then
         visible_children = children
@@ -545,10 +545,18 @@ function TreeView:toggle_expand(toggle, item)
   if not item then return end
   local node = item.node
   if self:can_expand(node) then
+    local expanded
     if type(toggle) == "boolean" then
-      self:set_expanded(node, toggle)
+      expanded = toggle
     else
-      self:set_expanded(node, not self:is_expanded(node))
+      expanded = not self:is_expanded(node)
+    end
+    if expanded and item.nodes then
+      for _, path_node in ipairs(item.nodes) do
+        self:set_expanded(path_node, true)
+      end
+    else
+      self:set_expanded(node, expanded)
     end
     local current = self:get_item(item, 0)
     if current then self.selected_item = current end

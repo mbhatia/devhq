@@ -230,11 +230,11 @@ local function test_treeview_compacts_an_empty_container_child()
     children = function() return {} end,
   }
   local repo = { id = "repo1", label = "repo1", kind = "repo", children = { worktree } }
-  local view = tree_view({ repo }, true)
+  local view = tree_view({ repo }, false)
 
   local rows = view:rows()
-  assert_equal(#rows, 1, "an empty container child is compacted with its parent")
-  assert_equal(view:get_item_label(rows[1]), "repo1/worktree1", "empty container row label")
+  assert_equal(#rows, 1, "an initially collapsed empty container child is compacted with its parent")
+  assert_equal(view:get_item_label(rows[1]), "repo1/worktree1", "initial empty container row label")
   assert_equal(view:can_expand(worktree), false, "empty container remains non-expandable")
 end
 
@@ -254,7 +254,7 @@ local function test_treeview_does_not_compact_branched_containers()
   assert_equal(view:get_item_label(rows[1]), "root", "branched parent is not compacted")
 end
 
-local function test_treeview_selection_follows_a_newly_compacted_row()
+local function test_treeview_expands_a_compacted_container_chain()
   local leaf = { id = "leaf", label = "leaf", kind = "record" }
   local child = { id = "child", label = "child", kind = "section", children = { leaf } }
   local root = { id = "root", label = "root", kind = "section", children = { child } }
@@ -262,11 +262,14 @@ local function test_treeview_selection_follows_a_newly_compacted_row()
 
   view.selected_item = view:rows()[1]
   view.selected_id = "root"
+  assert_equal(view:get_item_label(view.selected_item), "root/child",
+    "collapsed container chain is compacted on its initial render")
   view:toggle_expand(true)
 
   assert_equal(view:get_item_label(view.selected_item), "root/child",
-    "selection follows the compacted row after expanding its parent")
-  assert_equal(view.selected_item.node, child, "the next expansion acts on the visible child container")
+    "selection remains on the compacted row after expansion")
+  assert_equal(view.expanded.root, true, "expanding a compacted row expands its hidden parent")
+  assert_equal(view.expanded.child, true, "expanding a compacted row expands its visible container")
 end
 
 local tests = {
@@ -281,7 +284,7 @@ local tests = {
   test_treeview_does_not_compact_a_leaf_child,
   test_treeview_compacts_an_empty_container_child,
   test_treeview_does_not_compact_branched_containers,
-  test_treeview_selection_follows_a_newly_compacted_row,
+  test_treeview_expands_a_compacted_container_chain,
 }
 
 for _, test in ipairs(tests) do
