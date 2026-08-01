@@ -221,6 +221,23 @@ local function test_treeview_does_not_compact_a_leaf_child()
   assert_equal(view:get_item_label(rows[2]), "leaf", "leaf keeps its own row")
 end
 
+local function test_treeview_compacts_an_empty_container_child()
+  local worktree = {
+    id = "worktree1",
+    label = "worktree1",
+    kind = "worktree",
+    can_expand = function() return false end,
+    children = function() return {} end,
+  }
+  local repo = { id = "repo1", label = "repo1", kind = "repo", children = { worktree } }
+  local view = tree_view({ repo }, true)
+
+  local rows = view:rows()
+  assert_equal(#rows, 1, "an empty container child is compacted with its parent")
+  assert_equal(view:get_item_label(rows[1]), "repo1/worktree1", "empty container row label")
+  assert_equal(view:can_expand(worktree), false, "empty container remains non-expandable")
+end
+
 local function test_treeview_does_not_compact_branched_containers()
   local left = { id = "left", label = "left", kind = "section", children = {} }
   local right = { id = "right", label = "right", kind = "section", children = {} }
@@ -262,6 +279,7 @@ local tests = {
   test_duplicate_local_remote_branch_grouping,
   test_treeview_compacts_single_child_container_chains,
   test_treeview_does_not_compact_a_leaf_child,
+  test_treeview_compacts_an_empty_container_child,
   test_treeview_does_not_compact_branched_containers,
   test_treeview_selection_follows_a_newly_compacted_row,
 }

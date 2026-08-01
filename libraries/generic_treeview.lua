@@ -148,6 +148,10 @@ function TreeView:get_node_children(node)
   return sorted_children(call(node and node.children, node))
 end
 
+function TreeView:is_container(node)
+  return node ~= nil and (self:get_node_kind(node) == "dir" or node.children ~= nil)
+end
+
 function TreeView:can_expand(node)
   if not node then
     return false
@@ -155,7 +159,7 @@ function TreeView:can_expand(node)
   if node.can_expand ~= nil then
     return not not call(node.can_expand, node)
   end
-  return self:get_node_kind(node) == "dir" or node.children ~= nil
+  return self:is_container(node)
 end
 
 function TreeView:is_expanded(node)
@@ -195,7 +199,7 @@ function TreeView:rows()
     -- An expanded parent with one container child adds no useful row of its own.
     while self:is_expanded(node) do
       local children = self:get_node_children(node)
-      if #children ~= 1 or not self:can_expand(children[1]) then
+      if #children ~= 1 or not self:is_container(children[1]) then
         visible_children = children
         break
       end
