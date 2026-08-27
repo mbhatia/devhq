@@ -15,6 +15,7 @@ LITE_XL_DMG_PATH="${LITE_XL_DMG_PATH:-}"
 LPM_PATH="${LPM_PATH:-}"
 SHPOOL_PATH="${SHPOOL_PATH:-}"
 LUA_BIN_PATH="${LUA_BIN_PATH:-}"
+LITE_XL_GHOSTTY_PATH="${LITE_XL_GHOSTTY_PATH:-}"
 CODESIGN="${CODESIGN:-1}"
 SIGN_IDENTITY="${SIGN_IDENTITY:--}"
 CODESIGN_OPTIONS="${CODESIGN_OPTIONS:-}"
@@ -39,6 +40,7 @@ Environment overrides:
   LPM_PATH           Existing lpm binary; otherwise it is downloaded
   SHPOOL_PATH        Existing arm64 shpool binary; otherwise it is built
   LUA_BIN_PATH        Existing standalone arm64 Lua; otherwise it is built
+  LITE_XL_GHOSTTY_PATH  Built lite-xl-ghostty checkout to bundle
   DIST_DIR           Output directory; default: $DIST_DIR
   WORK_DIR           Staging directory; default: $WORK_DIR
   OUTPUT_DMG         Output path; default: $OUTPUT_DMG
@@ -70,6 +72,12 @@ esac
 [ -z "$LPM_PATH" ] || [ -f "$LPM_PATH" ] || die "missing lpm binary: $LPM_PATH"
 [ -z "$SHPOOL_PATH" ] || [ -f "$SHPOOL_PATH" ] || die "missing shpool binary: $SHPOOL_PATH"
 [ -z "$LUA_BIN_PATH" ] || [ -f "$LUA_BIN_PATH" ] || die "missing Lua binary: $LUA_BIN_PATH"
+if [ -n "$LITE_XL_GHOSTTY_PATH" ]; then
+  [ -d "$LITE_XL_GHOSTTY_PATH/plugins/ghostty" ] \
+    || die "missing Ghostty plugin: $LITE_XL_GHOSTTY_PATH/plugins/ghostty"
+  [ -f "$LITE_XL_GHOSTTY_PATH/libraries/ghostty_lxl/init.lib" ] \
+    || die "missing built Ghostty native module: $LITE_XL_GHOSTTY_PATH/libraries/ghostty_lxl/init.lib"
+fi
 
 log "DevHQ macOS package plan:"
 log "  App:       $STAGED_APP"
@@ -89,6 +97,8 @@ need_cmd hdiutil
 need_cmd plutil
 need_cmd find
 need_cmd file
+need_cmd lipo
+need_cmd nm
 [ "$CODESIGN" = "0" ] || need_cmd codesign
 
 rm -rf "$STAGE_DIR" "$DMG_ROOT"
@@ -107,12 +117,28 @@ LITE_XL_DMG_PATH="$LITE_XL_DMG_PATH" \
 
 resources_dir="$STAGED_APP/Contents/Resources"
 plist="$STAGED_APP/Contents/Info.plist"
+
+if [ -n "$LITE_XL_GHOSTTY_PATH" ]; then
+  log "Bundling the CI-built Ghostty plugin and native module..."
+  rm -rf "$resources_dir/plugins/ghostty" "$resources_dir/libraries/ghostty_lxl"
+  ditto "$LITE_XL_GHOSTTY_PATH/plugins/ghostty" "$resources_dir/plugins/ghostty"
+  ditto "$LITE_XL_GHOSTTY_PATH/libraries/ghostty_lxl" "$resources_dir/libraries/ghostty_lxl"
+fi
+
 [ -f "$resources_dir/core/start.lua" ] || die "staged app is missing Lite XL"
 [ -d "$resources_dir/plugins/devhq" ] || die "staged app is missing DevHQ"
 [ -d "$resources_dir/plugins/web" ] || die "staged app is missing web"
 [ -d "$resources_dir/plugins/ghostty" ] || die "staged app is missing ghostty"
 [ -f "$resources_dir/libraries/web_lxl/init.lib" ] || die "staged app is missing web_lxl"
 [ -f "$resources_dir/libraries/ghostty_lxl/init.lib" ] || die "staged app is missing ghostty_lxl"
+ghostty_native="$resources_dir/libraries/ghostty_lxl/init.lib"
+file "$ghostty_native" | grep -q 'Mach-O 64-bit bundle arm64' \
+  || die "staged ghostty_lxl is not a macOS arm64 bundle"
+lipo "$ghostty_native" -verify_arch arm64 \
+  || die "staged ghostty_lxl does not contain arm64 code"
+nm -gU "$ghostty_native" \
+  | awk '$NF == "_luaopen_lite_xl_ghostty_lxl" { found = 1 } END { exit !found }' \
+  || die "staged ghostty_lxl is missing its Lite XL entrypoint"
 [ -x "$resources_dir/bin/devhq" ] || die "staged app is missing the devhq CLI"
 [ -x "$resources_dir/bin/lpm" ] || die "staged app is missing the lpm CLI"
 [ -x "$resources_dir/bin/shpool" ] || die "staged app is missing the shpool CLI"
