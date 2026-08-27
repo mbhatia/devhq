@@ -199,6 +199,7 @@ LITE_XL_DMG_URL=https://example.invalid/lite-xl.dmg ./build_installer.sh
 LPM_PATH=/path/to/lpm ./build_installer.sh
 SHPOOL_PATH=/path/to/shpool ./build_installer.sh
 LUA_BIN_PATH=/path/to/lua ./build_installer.sh
+LITE_XL_GHOSTTY_PATH=/path/to/built/lite-xl-ghostty ./build_installer.sh
 LITE_XL_DMG_PATH=/path/to/lite-xl.dmg ./build_installer.sh --stage-only
 ```
 
@@ -206,7 +207,9 @@ By default the app is ad-hoc signed for local packaging. For a real Developer
 ID signature, set `SIGN_IDENTITY="Developer ID Application: ..."` and
 `CODESIGN_OPTIONS="--options runtime --timestamp"`.
 
-GitHub Actions also builds this installer on a macOS arm64 runner. Pull request
+GitHub Actions builds the pinned `lite-xl-ghostty` source and its pinned Ghostty
+VT dependency on a macOS arm64 runner, tests the native module, and bundles that
+plugin/module pair before signing the app. Pull request
 and manual (`workflow_dispatch`) runs upload `DevHQ-macos-arm64.dmg` as the
 `DevHQ-macos-arm64` workflow artifact for testers. Pushing a `v*` tag builds the
 same DMG and publishes it to the matching GitHub Release with the `gh` CLI.

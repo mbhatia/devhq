@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+env:
+  LITE_XL_GHOSTTY_COMMIT: "732a662bbaf4e3d6e27627c9296595d2c43ae3a9"
+  GHOSTTY_REPOSITORY: "https://github.com/manaflow-ai/ghostty.git"
+  GHOSTTY_REF: "xcframework-6b8d558cea313b09c10ac107254d6ee41a5044d9"
+  GHOSTTY_COMMIT: "41ab6c5ab650465dd65c9957ae0a95225e2c1048"
+  ZIG_VERSION: "0.15.2"
+
 jobs:
   build:
     name: Build DevHQ macOS arm64 DMG
@@ -18,8 +25,42 @@ jobs:
       - name: Checkout DevHQ
         uses: actions/checkout@v7
 
+      - name: Checkout lite-xl-ghostty
+        uses: actions/checkout@v7
+        with:
+          repository: mbhatia/lite-xl-ghostty
+          ref: ${{ env.LITE_XL_GHOSTTY_COMMIT }}
+          path: build-deps/lite-xl-ghostty
+
       - name: Install Rust toolchain
         run: rustup toolchain install stable --profile minimal
+
+      - name: Install Ghostty build toolchain
+        run: brew install cmake ninja gettext
+
+      - name: Set up Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+
+      - name: Fetch pinned Ghostty source
+        working-directory: build-deps/lite-xl-ghostty
+        run: |
+          git clone --depth 1 --branch "$GHOSTTY_REF" \
+            "$GHOSTTY_REPOSITORY" references/ghostty
+          test "$(git -C references/ghostty rev-parse HEAD)" = "$GHOSTTY_COMMIT"
+          test -f references/ghostty/CMakeLists.txt
+
+      - name: Build and test Ghostty plugin
+        working-directory: build-deps/lite-xl-ghostty
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLXL_GHOSTTY_BUILD_TESTS=ON
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure
+          file libraries/ghostty_lxl/init.lib
+          lipo libraries/ghostty_lxl/init.lib -verify_arch arm64
 
       - name: Import Developer ID certificate
         if: github.event_name != 'pull_request'
@@ -61,6 +102,7 @@ jobs:
       - name: Build installer
         env:
           CODESIGN: "1"
+          LITE_XL_GHOSTTY_PATH: ${{ github.workspace }}/build-deps/lite-xl-ghostty
         run: ./build_installer.sh
 
       - name: Notarize and staple DMG
@@ -123,7 +165,29 @@ jobs:
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lpm-LICENSE"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/shpool-LICENSE"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
+          test -d "$mount_dir/DevHQ.app/Contents/Resources/plugins/ghostty"
+          ghostty_native="$mount_dir/DevHQ.app/Contents/Resources/libraries/ghostty_lxl/init.lib"
+          test -f "$ghostty_native"
+          file "$ghostty_native" | grep -q 'Mach-O 64-bit bundle arm64'
+          lipo "$ghostty_native" -verify_arch arm64
+          nm -gU "$ghostty_native" \
+            | awk '$NF == "_luaopen_lite_xl_ghostty_lxl" { found = 1 } END { exit !found }'
+          codesign --verify --strict --verbose=2 "$ghostty_native"
           codesign --verify --deep --strict --verbose=2 "$mount_dir/DevHQ.app"
+
+          smoke_dir="$RUNNER_TEMP/devhq-native-smoke"
+          mkdir -p "$smoke_dir"
+          cat > "$smoke_dir/init.lua" <<'LUA'
+          local ok, module = pcall(require, "libraries.ghostty_lxl")
+          io.stderr:write(ok and "GHOSTTY_NATIVE_OK\n" or ("GHOSTTY_NATIVE_ERROR: " .. tostring(module) .. "\n"))
+          os.exit(ok and 0 or 1)
+          LUA
+          smoke_output="$(
+            LITE_USERDIR="$smoke_dir" \
+              "$mount_dir/DevHQ.app/Contents/MacOS/lite-xl" 2>&1
+          )"
+          printf '%s\n' "$smoke_output"
+          printf '%s\n' "$smoke_output" | grep -qx 'GHOSTTY_NATIVE_OK'
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
