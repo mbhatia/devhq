@@ -22,11 +22,11 @@ local codex_resume_thread_cmd = [[${SHELL:-sh} -lc 'exec codex --add-dir "$REPO"
 local function codex_cmd(cmd)
   local quoted = shell_quote_double(cmd)
   return [[session="$REPO_ID:${AGENT_ID##*:}"; ]]
+    .. [[ _atch() { [ -x "${DEVHQ_ATCH:-}" ] && exec "$DEVHQ_ATCH" "$session" ]] .. cmd .. [[; command -v atch >/dev/null 2>&1 && exec atch "$session" ]] .. cmd .. [[; }; ]]
     .. [[ _shpool_with_config() { command -v shpool >/dev/null 2>&1 && [ -f "$HOME/.config/shpool/config.toml" ] && exec shpool -c "$HOME/.config/shpool/config.toml" attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
     .. [[ _shpool() { command -v shpool >/dev/null 2>&1 && exec shpool attach -f -d "$PWD" -c ]] .. quoted .. [[ "$session"; }; ]]
-    .. [[ _atch() { command -v atch >/dev/null 2>&1 && exec atch "$session" ]] .. cmd .. [[; }; ]]
     .. [[ _cmd() { exec ]] .. cmd .. [[; }; ]]
-    .. [[ _shpool_with_config || _shpool || _atch || _cmd ]]
+    .. [[ _atch || _shpool_with_config || _shpool || _cmd ]]
 end
 local function fontawesome_icon_font()
   local font_path = USERDIR .. PATHSEP .. "fonts" .. PATHSEP
@@ -126,6 +126,7 @@ local function agent_options(w, a, cmd)
     command = cmd, shell = true, agent_close_on_exit = "never",
     env = { REPO = parent_repo_path(w), REPO_ID = parent_repo_id(w), AGENT_ID = agent_id(a),
       THREAD_ID = a.thread_id or "",
+      DEVHQ_ATCH = bundled_bin .. PATHSEP .. "atch",
       PATH = bundled_bin .. (inherited_path ~= "" and ":" .. inherited_path or "") },
   }
 end

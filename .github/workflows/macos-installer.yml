@@ -163,7 +163,12 @@ jobs:
           test -f "$mount_dir/DevHQ License.txt"
           test -f "$mount_dir/THIRD-PARTY-NOTICES.md"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lpm-LICENSE"
-          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/shpool-LICENSE"
+          test -x "$mount_dir/DevHQ.app/Contents/Resources/bin/atch"
+          test ! -e "$mount_dir/DevHQ.app/Contents/Resources/bin/shpool"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/atch-README.md"
+          file "$mount_dir/DevHQ.app/Contents/Resources/bin/atch" | grep -q 'Mach-O 64-bit executable arm64'
+          lipo "$mount_dir/DevHQ.app/Contents/Resources/bin/atch" -verify_arch arm64
+          grep -Fq 'DEVHQ_ATCH = bundled_bin .. PATHSEP .. "atch"' "$mount_dir/DevHQ.app/Contents/Resources/plugins/devhq/agents.lua"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
           test -d "$mount_dir/DevHQ.app/Contents/Resources/plugins/ghostty"
           ghostty_native="$mount_dir/DevHQ.app/Contents/Resources/libraries/ghostty_lxl/init.lib"

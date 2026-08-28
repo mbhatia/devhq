@@ -184,20 +184,20 @@ The script runs `install.sh` against a staged copy of the official Lite XL app,
 then brands, signs, and repackages it as `dist/DevHQ-macos-arm64.dmg`. LPM
 resolves DevHQ's declared web, terminal, widget, font, language, and LSP
 dependencies directly into the app bundle. The app also contains `devhq`,
-`lpm`, and `shpool` under `Contents/Resources/bin`; local DevHQ agent terminals
-add that directory to `PATH`. A private Lua interpreter is included for the
-`devhq` command. These commands are not added to the user's system-wide shell
-path. The Lite XL license remains in the app and is also visible at the DMG
-root. DevHQ, LPM, shpool, and Lua license texts are stored under
-`Contents/Resources/legal`, with `THIRD-PARTY-NOTICES.md` also visible at the
-DMG root.
+`lpm`, and `atch` under `Contents/Resources/bin`; packaged DevHQ agent
+profiles invoke that bundled `atch` directly. A private Lua interpreter is
+included for the `devhq` command. These commands are not added to the user's
+system-wide shell path. The Lite XL license remains in the app and is also
+visible at the DMG root. DevHQ, LPM, atch, and Lua license notices are stored
+under `Contents/Resources/legal`, with `THIRD-PARTY-NOTICES.md` also visible at
+the DMG root.
 
 Useful overrides:
 
 ```sh
 LITE_XL_DMG_URL=https://example.invalid/lite-xl.dmg ./build_installer.sh
 LPM_PATH=/path/to/lpm ./build_installer.sh
-SHPOOL_PATH=/path/to/shpool ./build_installer.sh
+ATCH_PATH=/path/to/atch ./build_installer.sh
 LUA_BIN_PATH=/path/to/lua ./build_installer.sh
 LITE_XL_GHOSTTY_PATH=/path/to/built/lite-xl-ghostty ./build_installer.sh
 LITE_XL_DMG_PATH=/path/to/lite-xl.dmg ./build_installer.sh --stage-only
