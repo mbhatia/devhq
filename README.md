@@ -192,6 +192,11 @@ visible at the DMG root. DevHQ, LPM, atch, and Lua license notices are stored
 under `Contents/Resources/legal`, with `THIRD-PARTY-NOTICES.md` also visible at
 the DMG root.
 
+Packaging also brands the native macOS About panel and Lite XL's Lua-based
+Settings → About pane with the DevHQ name and version. Set `DEVHQ_VERSION` to
+the release version and `DEVHQ_BUILD_NUMBER` to a numeric bundle build. GitHub
+Actions derives these from the release tag and workflow run number.
+
 Useful overrides:
 
 ```sh
@@ -201,6 +206,7 @@ ATCH_PATH=/path/to/atch ./build_installer.sh
 LUA_BIN_PATH=/path/to/lua ./build_installer.sh
 LITE_XL_GHOSTTY_PATH=/path/to/built/lite-xl-ghostty ./build_installer.sh
 LITE_XL_DMG_PATH=/path/to/lite-xl.dmg ./build_installer.sh --stage-only
+DEVHQ_VERSION=0.1.0-alpha.3 DEVHQ_BUILD_NUMBER=3 ./build_installer.sh
 ```
 
 By default the app is ad-hoc signed for local packaging. For a real Developer
