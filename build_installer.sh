@@ -13,7 +13,7 @@ LITE_XL_VERSION="${LITE_XL_VERSION:-v2.1.8}"
 LITE_XL_DMG_URL="${LITE_XL_DMG_URL:-}"
 LITE_XL_DMG_PATH="${LITE_XL_DMG_PATH:-}"
 LPM_PATH="${LPM_PATH:-}"
-SHPOOL_PATH="${SHPOOL_PATH:-}"
+ATCH_PATH="${ATCH_PATH:-}"
 LUA_BIN_PATH="${LUA_BIN_PATH:-}"
 LITE_XL_GHOSTTY_PATH="${LITE_XL_GHOSTTY_PATH:-}"
 CODESIGN="${CODESIGN:-1}"
@@ -38,7 +38,7 @@ Environment overrides:
   LITE_XL_DMG_PATH  Existing Lite XL DMG; otherwise it is downloaded
   LITE_XL_DMG_URL   Alternate Lite XL DMG URL
   LPM_PATH           Existing lpm binary; otherwise it is downloaded
-  SHPOOL_PATH        Existing arm64 shpool binary; otherwise it is built
+  ATCH_PATH          Existing arm64 atch binary; otherwise it is built
   LUA_BIN_PATH        Existing standalone arm64 Lua; otherwise it is built
   LITE_XL_GHOSTTY_PATH  Built lite-xl-ghostty checkout to bundle
   DIST_DIR           Output directory; default: $DIST_DIR
@@ -70,7 +70,7 @@ esac
 [ -f "$APP_ICON_PATH" ] || die "missing app icon: $APP_ICON_PATH"
 [ -z "$LITE_XL_DMG_PATH" ] || [ -f "$LITE_XL_DMG_PATH" ] || die "missing Lite XL DMG: $LITE_XL_DMG_PATH"
 [ -z "$LPM_PATH" ] || [ -f "$LPM_PATH" ] || die "missing lpm binary: $LPM_PATH"
-[ -z "$SHPOOL_PATH" ] || [ -f "$SHPOOL_PATH" ] || die "missing shpool binary: $SHPOOL_PATH"
+[ -z "$ATCH_PATH" ] || [ -f "$ATCH_PATH" ] || die "missing atch binary: $ATCH_PATH"
 [ -z "$LUA_BIN_PATH" ] || [ -f "$LUA_BIN_PATH" ] || die "missing Lua binary: $LUA_BIN_PATH"
 if [ -n "$LITE_XL_GHOSTTY_PATH" ]; then
   [ -d "$LITE_XL_GHOSTTY_PATH/plugins/ghostty" ] \
@@ -108,7 +108,7 @@ log "Installing DevHQ into the staged app..."
 DEVHQ_REPOSITORY_URL="$SCRIPT_DIR" \
 DEVHQ_APP_PATH="$STAGED_APP" \
 DEVHQ_LPM_PATH="$LPM_PATH" \
-DEVHQ_SHPOOL_PATH="$SHPOOL_PATH" \
+DEVHQ_ATCH_PATH="$ATCH_PATH" \
 DEVHQ_LUA_PATH="$LUA_BIN_PATH" \
 LITE_XL_VERSION="$LITE_XL_VERSION" \
 LITE_XL_DMG_URL="$LITE_XL_DMG_URL" \
@@ -141,12 +141,16 @@ nm -gU "$ghostty_native" \
   || die "staged ghostty_lxl is missing its Lite XL entrypoint"
 [ -x "$resources_dir/bin/devhq" ] || die "staged app is missing the devhq CLI"
 [ -x "$resources_dir/bin/lpm" ] || die "staged app is missing the lpm CLI"
-[ -x "$resources_dir/bin/shpool" ] || die "staged app is missing the shpool CLI"
+[ -x "$resources_dir/bin/atch" ] || die "staged app is missing the atch CLI"
+file "$resources_dir/bin/atch" | grep -q 'Mach-O 64-bit executable arm64' \
+  || die "staged atch is not a macOS arm64 executable"
+lipo "$resources_dir/bin/atch" -verify_arch arm64 \
+  || die "staged atch does not contain arm64 code"
 [ -x "$resources_dir/bin/lua" ] || die "staged app is missing the Lua interpreter"
 [ -f "$resources_dir/licenses.md" ] || die "staged app is missing Lite XL licenses"
 [ -f "$resources_dir/legal/DevHQ-LICENSE" ] || die "staged app is missing the DevHQ license"
 [ -f "$resources_dir/legal/lpm-LICENSE" ] || die "staged app is missing the lpm license"
-[ -f "$resources_dir/legal/shpool-LICENSE" ] || die "staged app is missing the shpool license"
+[ -f "$resources_dir/legal/atch-README.md" ] || die "staged app is missing the atch license notice"
 [ -f "$resources_dir/legal/lua-LICENSE.html" ] || die "staged app is missing the Lua license"
 [ -f "$resources_dir/legal/THIRD-PARTY-NOTICES.md" ] || die "staged app is missing third-party notices"
 [ -f "$plist" ] || die "staged app is missing Info.plist"

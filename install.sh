@@ -5,8 +5,11 @@ DEVHQ_REPOSITORY_URL="${DEVHQ_REPOSITORY_URL:-https://github.com/mbhatia/devhq}"
 DEVHQ_LPM_RELEASE_URL="${DEVHQ_LPM_RELEASE_URL:-https://github.com/lite-xl/lite-xl-plugin-manager/releases/download/latest}"
 DEVHQ_LPM_LICENSE_URL="${DEVHQ_LPM_LICENSE_URL:-https://raw.githubusercontent.com/lite-xl/lite-xl-plugin-manager/latest/LICENSE}"
 DEVHQ_SHPOOL_REPOSITORY_URL="${DEVHQ_SHPOOL_REPOSITORY_URL:-https://github.com/shell-pool/shpool}"
-DEVHQ_SHPOOL_REV="${DEVHQ_SHPOOL_REV:-fe2d11595ff255810523b0868159dec051e303f1}"
-DEVHQ_SHPOOL_PATH="${DEVHQ_SHPOOL_PATH:-}"
+DEVHQ_ATCH_VERSION="${DEVHQ_ATCH_VERSION:-0.5}"
+DEVHQ_ATCH_REV="${DEVHQ_ATCH_REV:-15e0d3a0912618c08f7a74f85e41cca673b313f0}"
+DEVHQ_ATCH_ARCHIVE_URL="${DEVHQ_ATCH_ARCHIVE_URL:-https://github.com/mobydeck/atch/archive/$DEVHQ_ATCH_REV.tar.gz}"
+DEVHQ_ATCH_README_URL="${DEVHQ_ATCH_README_URL:-https://raw.githubusercontent.com/mobydeck/atch/$DEVHQ_ATCH_REV/README.md}"
+DEVHQ_ATCH_PATH="${DEVHQ_ATCH_PATH:-}"
 DEVHQ_LUA_VERSION="${DEVHQ_LUA_VERSION:-5.4.8}"
 DEVHQ_LUA_SHA256="${DEVHQ_LUA_SHA256:-4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae}"
 DEVHQ_LUA_PATH="${DEVHQ_LUA_PATH:-}"
@@ -216,26 +219,23 @@ install_bundled_cli_tools() {
   install_devhq_cli
   download "$DEVHQ_LPM_LICENSE_URL" "$legal_dir/lpm-LICENSE"
 
-  shpool="$bin_dir/shpool"
-  if [ -n "$DEVHQ_SHPOOL_PATH" ]; then
-    [ -f "$DEVHQ_SHPOOL_PATH" ] || die "missing shpool binary: $DEVHQ_SHPOOL_PATH"
-    cp "$DEVHQ_SHPOOL_PATH" "$shpool"
+  atch="$bin_dir/atch"
+  if [ -n "$DEVHQ_ATCH_PATH" ]; then
+    [ -f "$DEVHQ_ATCH_PATH" ] || die "missing atch binary: $DEVHQ_ATCH_PATH"
+    cp "$DEVHQ_ATCH_PATH" "$atch"
   else
-    need_cmd cargo
-    shpool_root="$tmpdir/shpool"
-    log "Building bundled shpool..."
-    cargo install \
-      --git "$DEVHQ_SHPOOL_REPOSITORY_URL" \
-      --rev "$DEVHQ_SHPOOL_REV" \
-      --root "$shpool_root" \
-      --locked \
-      shpool
-    cp "$shpool_root/bin/shpool" "$shpool"
+    need_cmd make
+    need_cmd tar
+    atch_archive="$tmpdir/atch.tar.gz"
+    atch_source="$tmpdir/atch-$DEVHQ_ATCH_REV"
+    log "Building bundled atch..."
+    download "$DEVHQ_ATCH_ARCHIVE_URL" "$atch_archive"
+    tar -xzf "$atch_archive" -C "$tmpdir"
+    make -C "$atch_source" VERSION="$DEVHQ_ATCH_VERSION"
+    cp "$atch_source/atch" "$atch"
   fi
-  chmod +x "$shpool"
-  download \
-    "https://raw.githubusercontent.com/shell-pool/shpool/$DEVHQ_SHPOOL_REV/LICENSE" \
-    "$legal_dir/shpool-LICENSE"
+  chmod +x "$atch"
+  download "$DEVHQ_ATCH_README_URL" "$legal_dir/atch-README.md"
 
   lua="$bin_dir/lua"
   if [ -n "$DEVHQ_LUA_PATH" ]; then
@@ -437,7 +437,11 @@ install_devhq() {
 
 install_lite_xl_plugins() {
   log "Installing language and LSP plugins..."
-  run_lpm install meta_languages lsp --assume-yes
+  if [ -n "$DEVHQ_APP_PATH" ]; then
+    run_lpm install meta_languages lsp settings --assume-yes
+  else
+    run_lpm install meta_languages lsp --assume-yes
+  fi
 }
 
 need_cmd uname

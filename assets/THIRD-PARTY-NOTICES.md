@@ -25,11 +25,12 @@ which also contains the notice for LPM's Lua JSON library.
 
 Project: <https://github.com/lite-xl/lite-xl-plugin-manager>
 
-## shpool
+## atch
 
-Distributed under the Apache License 2.0. See `shpool-LICENSE`.
+The project describes atch as GPL-licensed. See `atch-README.md` for its
+license statement and project documentation.
 
-Project: <https://github.com/shell-pool/shpool>
+Project: <https://github.com/mobydeck/atch>
 
 ## Lua
 
