@@ -143,6 +143,8 @@ fi
 [ -d "$resources_dir/plugins/ghostty" ] || die "staged app is missing ghostty"
 [ -f "$resources_dir/libraries/web_lxl/init.lib" ] || die "staged app is missing web_lxl"
 [ -f "$resources_dir/libraries/ghostty_lxl/init.lib" ] || die "staged app is missing ghostty_lxl"
+fontawesome_brands="$resources_dir/fonts/fontawesome_free_desktop/fontawesome-free-7.3.0-desktop/otfs/Font Awesome 7 Brands-Regular-400.otf"
+[ -f "$fontawesome_brands" ] || die "staged app is missing the Font Awesome brands font"
 ghostty_native="$resources_dir/libraries/ghostty_lxl/init.lib"
 file "$ghostty_native" | grep -q 'Mach-O 64-bit bundle arm64' \
   || die "staged ghostty_lxl is not a macOS arm64 bundle"

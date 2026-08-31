@@ -173,6 +173,8 @@ jobs:
           grep -Fq 'DEVHQ_ATCH = bundled_bin .. PATHSEP .. "atch"' "$mount_dir/DevHQ.app/Contents/Resources/plugins/devhq/agents.lua"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
           test -d "$mount_dir/DevHQ.app/Contents/Resources/plugins/ghostty"
+          test -f "$mount_dir/DevHQ.app/Contents/Resources/fonts/fontawesome_free_desktop/fontawesome-free-7.3.0-desktop/otfs/Font Awesome 7 Brands-Regular-400.otf"
+          grep -Fq 'font_path = DATADIR .. PATHSEP .. font_suffix' "$mount_dir/DevHQ.app/Contents/Resources/plugins/devhq/agents.lua"
           expected_version="${GITHUB_REF_NAME#v}"
           if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
             expected_version="0.1.0-dev"
@@ -198,9 +200,18 @@ jobs:
           cat > "$smoke_dir/init.lua" <<'LUA'
           local settings_ok, settings = pcall(require, "plugins.settings")
           local ok, module = pcall(require, "libraries.ghostty_lxl")
+          local agents_ok, agents = pcall(require, "plugins.devhq.agents")
+          local config = require "core.config"
+          local style = require "core.style"
+          local codex = config.plugins.devhq and config.plugins.devhq.agents
+            and config.plugins.devhq.agents.codex
+          local agent_icon_font_ok = agents_ok and codex and codex.icon_font
+            and codex.icon_font ~= style.font and codex.icon_font ~= style.icon_font
           io.stderr:write(settings_ok and "DEVHQ_SETTINGS_OK\n" or ("DEVHQ_SETTINGS_ERROR: " .. tostring(settings) .. "\n"))
           io.stderr:write(ok and "GHOSTTY_NATIVE_OK\n" or ("GHOSTTY_NATIVE_ERROR: " .. tostring(module) .. "\n"))
-          os.exit(settings_ok and ok and 0 or 1)
+          io.stderr:write(agent_icon_font_ok and "DEVHQ_AGENT_ICON_FONT_OK\n"
+            or ("DEVHQ_AGENT_ICON_FONT_ERROR: " .. tostring(agents) .. "\n"))
+          os.exit(settings_ok and ok and agent_icon_font_ok and 0 or 1)
           LUA
           smoke_output="$(
             LITE_USERDIR="$smoke_dir" \
@@ -209,6 +220,7 @@ jobs:
           printf '%s\n' "$smoke_output"
           printf '%s\n' "$smoke_output" | grep -qx 'DEVHQ_SETTINGS_OK'
           printf '%s\n' "$smoke_output" | grep -qx 'GHOSTTY_NATIVE_OK'
+          printf '%s\n' "$smoke_output" | grep -qx 'DEVHQ_AGENT_ICON_FONT_OK'
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v7
