@@ -29,11 +29,15 @@ local function codex_cmd(cmd)
     .. [[ _atch || _shpool_with_config || _shpool || _cmd ]]
 end
 local function fontawesome_icon_font()
-  local font_path = USERDIR .. PATHSEP .. "fonts" .. PATHSEP
+  local font_suffix = "fonts" .. PATHSEP
     .. "fontawesome_free_desktop" .. PATHSEP
     .. "fontawesome-free-7.3.0-desktop" .. PATHSEP
     .. "otfs" .. PATHSEP
     .. "Font Awesome 7 Brands-Regular-400.otf"
+  local font_path = USERDIR .. PATHSEP .. font_suffix
+  if not system.get_file_info(font_path) then
+    font_path = DATADIR .. PATHSEP .. font_suffix
+  end
   if not system.get_file_info(font_path) then
     return style.icon_font or style.font
   end
