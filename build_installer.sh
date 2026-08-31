@@ -7,6 +7,8 @@ WORK_DIR="${WORK_DIR:-$DIST_DIR/build-installer}"
 OUTPUT_DMG="${OUTPUT_DMG:-$DIST_DIR/DevHQ-macos-arm64.dmg}"
 APP_BUNDLE_NAME="${APP_BUNDLE_NAME:-DevHQ}"
 BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.github.mbhatia.devhq}"
+DEVHQ_VERSION="${DEVHQ_VERSION:-0.1.0-dev}"
+DEVHQ_BUILD_NUMBER="${DEVHQ_BUILD_NUMBER:-1}"
 VOLUME_NAME="${VOLUME_NAME:-DevHQ}"
 APP_ICON_PATH="${APP_ICON_PATH:-$SCRIPT_DIR/assets/DevHQ.icns}"
 LITE_XL_VERSION="${LITE_XL_VERSION:-v2.1.8}"
@@ -41,6 +43,8 @@ Environment overrides:
   ATCH_PATH          Existing arm64 atch binary; otherwise it is built
   LUA_BIN_PATH        Existing standalone arm64 Lua; otherwise it is built
   LITE_XL_GHOSTTY_PATH  Built lite-xl-ghostty checkout to bundle
+  DEVHQ_VERSION       Displayed application version; default: $DEVHQ_VERSION
+  DEVHQ_BUILD_NUMBER  Numeric macOS bundle build; default: $DEVHQ_BUILD_NUMBER
   DIST_DIR           Output directory; default: $DIST_DIR
   WORK_DIR           Staging directory; default: $WORK_DIR
   OUTPUT_DMG         Output path; default: $OUTPUT_DMG
@@ -66,6 +70,13 @@ case "$CODESIGN" in
   0|1) ;;
   *) die "CODESIGN must be 0 or 1" ;;
 esac
+DEVHQ_VERSION="${DEVHQ_VERSION#v}"
+case "$DEVHQ_VERSION" in
+  ""|*[!0-9A-Za-z.+-]*) die "DEVHQ_VERSION contains unsupported characters" ;;
+esac
+case "$DEVHQ_BUILD_NUMBER" in
+  ""|*[!0-9]*) die "DEVHQ_BUILD_NUMBER must be numeric" ;;
+esac
 [ -x "$SCRIPT_DIR/install.sh" ] || die "missing installer: $SCRIPT_DIR/install.sh"
 [ -f "$APP_ICON_PATH" ] || die "missing app icon: $APP_ICON_PATH"
 [ -z "$LITE_XL_DMG_PATH" ] || [ -f "$LITE_XL_DMG_PATH" ] || die "missing Lite XL DMG: $LITE_XL_DMG_PATH"
@@ -81,6 +92,7 @@ fi
 
 log "DevHQ macOS package plan:"
 log "  App:       $STAGED_APP"
+log "  Version:   $DEVHQ_VERSION ($DEVHQ_BUILD_NUMBER)"
 log "  Lite XL:   ${LITE_XL_DMG_PATH:-${LITE_XL_DMG_URL:-official $LITE_XL_VERSION arm64 DMG}}"
 log "  Output:    $OUTPUT_DMG"
 log "  Signing:   CODESIGN=$CODESIGN, SIGN_IDENTITY=$SIGN_IDENTITY"
@@ -159,8 +171,37 @@ log "Branding the staged app..."
 plutil -replace CFBundleName -string "$APP_BUNDLE_NAME" "$plist"
 plutil -replace CFBundleDisplayName -string "$APP_BUNDLE_NAME" "$plist"
 plutil -replace CFBundleIdentifier -string "$BUNDLE_IDENTIFIER" "$plist"
+plutil -replace CFBundleShortVersionString -string "$DEVHQ_VERSION" "$plist"
+plutil -replace CFBundleVersion -string "$DEVHQ_BUILD_NUMBER" "$plist"
 plutil -replace CFBundleIconFile -string icon.icns "$plist"
 ditto "$APP_ICON_PATH" "$resources_dir/icon.icns"
+
+settings_lua="$resources_dir/plugins/settings.lua"
+[ -f "$settings_lua" ] || die "staged app is missing the settings plugin"
+grep -Fq 'local title = Label(self.about, "Lite XL")' "$settings_lua" \
+  || die "Lite XL About title has changed"
+grep -Fq 'local version = Label(self.about, "version " .. VERSION)' "$settings_lua" \
+  || die "Lite XL About version has changed"
+grep -Fq 'title:set_label("Lite XL")' "$settings_lua" \
+  || die "Lite XL About layout has changed"
+grep -Fq 'Open https://lite-xl.com/' "$settings_lua" \
+  || die "Lite XL About website has changed"
+sed -i '' \
+  -e 's|local title = Label(self.about, "Lite XL")|local title = Label(self.about, "DevHQ")|' \
+  -e "s|local version = Label(self.about, \"version \" .. VERSION)|local version = Label(self.about, \"version $DEVHQ_VERSION\")|" \
+  -e 's|A lightweight text editor written in Lua, adapted from lite.|A development environment for repositories, worktrees, and coding agents.|' \
+  -e 's|Open https://lite-xl.com/|Open https://devhq.app/|' \
+  -e 's|open_link("https://lite-xl.com/")|open_link("https://devhq.app/")|' \
+  -e 's|title:set_label("Lite XL")|title:set_label("DevHQ")|' \
+  "$settings_lua"
+grep -Fq 'local title = Label(self.about, "DevHQ")' "$settings_lua" \
+  || die "failed to brand the About title"
+grep -Fq "local version = Label(self.about, \"version $DEVHQ_VERSION\")" "$settings_lua" \
+  || die "failed to brand the About version"
+grep -Fq 'A development environment for repositories, worktrees, and coding agents.' "$settings_lua" \
+  || die "failed to brand the About description"
+grep -Fq 'Open https://devhq.app/' "$settings_lua" \
+  || die "failed to brand the About website"
 
 codesign_path() {
   local path="$1"

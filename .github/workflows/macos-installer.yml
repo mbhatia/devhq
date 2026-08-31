@@ -102,6 +102,8 @@ jobs:
       - name: Build installer
         env:
           CODESIGN: "1"
+          DEVHQ_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '0.1.0-dev' }}
+          DEVHQ_BUILD_NUMBER: ${{ github.run_number }}
           LITE_XL_GHOSTTY_PATH: ${{ github.workspace }}/build-deps/lite-xl-ghostty
         run: ./build_installer.sh
 
@@ -171,6 +173,17 @@ jobs:
           grep -Fq 'DEVHQ_ATCH = bundled_bin .. PATHSEP .. "atch"' "$mount_dir/DevHQ.app/Contents/Resources/plugins/devhq/agents.lua"
           test -f "$mount_dir/DevHQ.app/Contents/Resources/legal/lua-LICENSE.html"
           test -d "$mount_dir/DevHQ.app/Contents/Resources/plugins/ghostty"
+          expected_version="${GITHUB_REF_NAME#v}"
+          if [[ "$GITHUB_REF" != refs/tags/v* ]]; then
+            expected_version="0.1.0-dev"
+          fi
+          plist="$mount_dir/DevHQ.app/Contents/Info.plist"
+          test "$(plutil -extract CFBundleShortVersionString raw "$plist")" = "$expected_version"
+          test "$(plutil -extract CFBundleVersion raw "$plist")" = "$GITHUB_RUN_NUMBER"
+          settings_lua="$mount_dir/DevHQ.app/Contents/Resources/plugins/settings.lua"
+          grep -Fq 'local title = Label(self.about, "DevHQ")' "$settings_lua"
+          grep -Fq "local version = Label(self.about, \"version $expected_version\")" "$settings_lua"
+          grep -Fq 'Open https://devhq.app/' "$settings_lua"
           ghostty_native="$mount_dir/DevHQ.app/Contents/Resources/libraries/ghostty_lxl/init.lib"
           test -f "$ghostty_native"
           file "$ghostty_native" | grep -q 'Mach-O 64-bit bundle arm64'
@@ -183,15 +196,18 @@ jobs:
           smoke_dir="$RUNNER_TEMP/devhq-native-smoke"
           mkdir -p "$smoke_dir"
           cat > "$smoke_dir/init.lua" <<'LUA'
+          local settings_ok, settings = pcall(require, "plugins.settings")
           local ok, module = pcall(require, "libraries.ghostty_lxl")
+          io.stderr:write(settings_ok and "DEVHQ_SETTINGS_OK\n" or ("DEVHQ_SETTINGS_ERROR: " .. tostring(settings) .. "\n"))
           io.stderr:write(ok and "GHOSTTY_NATIVE_OK\n" or ("GHOSTTY_NATIVE_ERROR: " .. tostring(module) .. "\n"))
-          os.exit(ok and 0 or 1)
+          os.exit(settings_ok and ok and 0 or 1)
           LUA
           smoke_output="$(
             LITE_USERDIR="$smoke_dir" \
               "$mount_dir/DevHQ.app/Contents/MacOS/lite-xl" 2>&1
           )"
           printf '%s\n' "$smoke_output"
+          printf '%s\n' "$smoke_output" | grep -qx 'DEVHQ_SETTINGS_OK'
           printf '%s\n' "$smoke_output" | grep -qx 'GHOSTTY_NATIVE_OK'
 
       - name: Upload installer artifact

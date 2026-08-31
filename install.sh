@@ -436,7 +436,7 @@ install_devhq() {
 }
 
 install_lite_xl_plugins() {
-  log "Installing language and LSP plugins..."
+  log "Installing language, LSP, and settings plugins..."
   if [ -n "$DEVHQ_APP_PATH" ]; then
     run_lpm install meta_languages lsp settings --assume-yes
   else
