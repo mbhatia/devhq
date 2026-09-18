@@ -12,7 +12,8 @@ final class DevHQApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@main
+// The entry point is `DevHQMain` (ReviewReplyCLI.swift), which dispatches
+// headless `devhq review …` invocations before launching the app.
 struct DevHQApp: App {
     @NSApplicationDelegateAdaptor(DevHQApplicationDelegate.self)
     private var applicationDelegate
