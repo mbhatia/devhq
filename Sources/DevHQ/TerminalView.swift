@@ -210,7 +210,7 @@ final class NativeTerminalView: NSView, NSTextInputClient {
         let point = convert(event.locationInWindow, from: nil)
         if event.modifierFlags.contains(.command),
            let gridPoint = gridPointIfInside(for: point),
-           session.openHyperlink(at: gridPoint) {
+           session.openLink(at: gridPoint) {
             applicationMouseTracking = false
             selectionStart = nil
             selectionEnd = nil

@@ -372,6 +372,33 @@ final class TerminalSession: ObservableObject, Identifiable {
         return true
     }
 
+    /// Routes Cmd-clicks that hit no OSC 8 hyperlink. Configured at app
+    /// startup by `installTerminalLinkRouting`; returns whether the detected
+    /// link was handled.
+    static var detectedLinkHandler: ((
+        TerminalLinkMatch,
+        _ currentDirectory: URL,
+        _ rootURL: URL
+    ) -> Bool)?
+
+    /// Opens the OSC 8 hyperlink at `point`, falling back to pattern-detected
+    /// links (URLs, file URLs, and paths with optional line:column) in the
+    /// clicked row's visible text.
+    func openLink(at point: (column: Int, row: Int)) -> Bool {
+        if openHyperlink(at: point) { return true }
+        guard let handler = Self.detectedLinkHandler,
+              snapshot.cells.indices.contains(point.row),
+              let line = TerminalLinkDetector.line(
+                  fromCells: snapshot.cells[point.row],
+                  clickedColumn: point.column
+              ),
+              let match = TerminalLinkDetector.detect(
+                  in: line.text,
+                  utf16Index: line.utf16Index
+              ) else { return false }
+        return handler(match, currentDirectory, rootURL)
+    }
+
     func close() {
         guard !closed else { return }
         closed = true
