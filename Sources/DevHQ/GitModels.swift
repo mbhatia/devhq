@@ -136,6 +136,9 @@ public struct GitDiffRequest: Hashable, Sendable {
     public let selectedParent: String?
     public let mirrorParent: String?
     public let historicalCommit: String?
+    /// The file's path before a rename in `historicalCommit`, so the diff
+    /// pathspec covers both sides of the rename.
+    public let historicalOldPath: String?
     public let contextID: String
 
     public init(
@@ -146,6 +149,7 @@ public struct GitDiffRequest: Hashable, Sendable {
         selectedParent: String? = nil,
         mirrorParent: String? = nil,
         historicalCommit: String? = nil,
+        historicalOldPath: String? = nil,
         contextID: String = UUID().uuidString
     ) {
         self.repositoryURL = repositoryURL
@@ -155,6 +159,7 @@ public struct GitDiffRequest: Hashable, Sendable {
         self.selectedParent = selectedParent
         self.mirrorParent = mirrorParent
         self.historicalCommit = historicalCommit
+        self.historicalOldPath = historicalOldPath
         self.contextID = contextID
     }
 }
