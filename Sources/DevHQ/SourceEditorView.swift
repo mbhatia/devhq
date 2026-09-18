@@ -13,10 +13,12 @@ struct SourceEditorView: View {
     let fontName: String
     let isEditable: Bool
     let diffConfiguration: DiffEditorConfiguration?
+    let commentContext: CommentEditorContext?
 
     @State private var state = SourceEditorState()
     @State private var syntaxHighlighter = CorrectedTreeSitterHighlightProvider()
     @StateObject private var diffPresentation = DiffEditorPresentation()
+    @StateObject private var commentPresentation = CommentEditorPresentation()
 
     init(
         text: Binding<String>,
@@ -27,7 +29,8 @@ struct SourceEditorView: View {
         showFoldingRibbon: Bool,
         fontName: String,
         isEditable: Bool = true,
-        diffConfiguration: DiffEditorConfiguration? = nil
+        diffConfiguration: DiffEditorConfiguration? = nil,
+        commentContext: CommentEditorContext? = nil
     ) {
         _text = text
         self.language = language
@@ -38,6 +41,7 @@ struct SourceEditorView: View {
         self.fontName = fontName
         self.isEditable = isEditable
         self.diffConfiguration = diffConfiguration
+        self.commentContext = commentContext
     }
 
     var body: some View {
@@ -55,7 +59,7 @@ struct SourceEditorView: View {
                 ),
                 state: $state,
                 highlightProviders: [syntaxHighlighter],
-                coordinators: [diffPresentation.coordinator]
+                coordinators: [diffPresentation.coordinator, commentPresentation.coordinator]
             )
 
             if diffConfiguration?.isEnabled == true,
@@ -71,6 +75,9 @@ struct SourceEditorView: View {
         }
         .task(id: diffLoadIdentity) {
             await diffPresentation.load(diffConfiguration)
+        }
+        .task(id: commentContext) {
+            commentPresentation.bind(context: commentContext)
         }
         .onDisappear {
             diffPresentation.invalidate()

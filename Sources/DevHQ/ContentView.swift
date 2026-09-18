@@ -34,6 +34,7 @@ struct ContentView: View {
     @ObservedObject var commandPalette: CommandPaletteController
     @ObservedObject var commandContext: CommandContextTracker
     @ObservedObject var contextMenuRegistry: ContextMenuRegistry
+    @ObservedObject var reviewComments: CommentThreadsController
     var tracksLayoutChanges = true
     @State private var hasRestoredLayout = false
     @State private var layoutRestorationRequestID = 0
@@ -118,6 +119,11 @@ struct ContentView: View {
                             )
                         }
                     }
+
+                if reviewComments.isSidebarVisible {
+                    ReviewSidebarPane(controller: reviewComments)
+                        .frame(minWidth: 220, idealWidth: 280, maxWidth: 440)
+                }
             }
 
             CommandPalette(controller: commandPalette)
@@ -766,7 +772,12 @@ private struct FileEditor: View {
             showFoldingRibbon: settings.showFoldingRibbon,
             fontName: settings.codeFontName,
             isEditable: !document.isReadOnly,
-            diffConfiguration: workspace.diffEditorConfiguration(for: document)
+            diffConfiguration: workspace.diffEditorConfiguration(for: document),
+            commentContext: CommentEditorContext(
+                documentID: document.id,
+                fileURL: document.url,
+                isReadOnly: document.isReadOnly
+            )
         )
     }
 }

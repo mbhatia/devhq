@@ -25,6 +25,7 @@ struct DevHQApp: App {
     @StateObject private var plugins: LuaPluginHost
     @StateObject private var agentManager: AgentManager
     @StateObject private var layout: WorkspaceLayoutModel
+    @StateObject private var commentThreads: CommentThreadsController
     private static var snapshotWindow: NSWindow?
 
     init() {
@@ -113,6 +114,22 @@ struct DevHQApp: App {
             plugins.settings.pluginError =
                 "Could not register built-in commands: \(error.localizedDescription)"
         }
+        let commentThreads = CommentThreadsController(
+            workspace: workspace,
+            agentManager: agentManager
+        )
+        commentThreads.makeActive()
+        commentThreads.startWatching()
+        do {
+            try registerReviewCommentCommands(
+                in: commandManager,
+                workspace: workspace,
+                comments: commentThreads
+            )
+        } catch {
+            plugins.settings.pluginError =
+                "Could not register review comment commands: \(error.localizedDescription)"
+        }
         let hasExplicitCommandLineWorkspace = Self.argumentValue(after: "--workspace") != nil
         worktreeExplorer.restore(activateSelection: !hasExplicitCommandLineWorkspace)
         if hasExplicitCommandLineWorkspace {
@@ -130,6 +147,7 @@ struct DevHQApp: App {
         _plugins = StateObject(wrappedValue: plugins)
         _agentManager = StateObject(wrappedValue: agentManager)
         _layout = StateObject(wrappedValue: layout)
+        _commentThreads = StateObject(wrappedValue: commentThreads)
         applicationDelegate.terminationHandler = {
             agentManager.prepareForTermination()
             workspace.saveCurrentWorkspaceState()
@@ -170,7 +188,8 @@ struct DevHQApp: App {
                 commandManager: commandManager,
                 commandPalette: commandPalette,
                 commandContext: commandContext,
-                contextMenuRegistry: plugins.contextMenuRegistry
+                contextMenuRegistry: plugins.contextMenuRegistry,
+                reviewComments: commentThreads
             )
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -256,6 +275,7 @@ struct DevHQApp: App {
             commandPalette: commandPalette,
             commandContext: commandContext,
             contextMenuRegistry: contextMenuRegistry,
+            reviewComments: CommentThreadsController(workspace: model),
             tracksLayoutChanges: false
         )
             .frame(width: 1200, height: 760)
