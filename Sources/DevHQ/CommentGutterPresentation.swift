@@ -36,6 +36,7 @@ final class CommentEditorCoordinator: NSObject, @preconcurrency TextViewCoordina
     private var overlayCreated = false
     private var overlayInput = ""
     private var hasAppeared = false
+    private var gutterFrameObserver: Any?
 
     var isReady: Bool {
         hasAppeared && controller != nil
@@ -62,6 +63,10 @@ final class CommentEditorCoordinator: NSObject, @preconcurrency TextViewCoordina
             NSEvent.removeMonitor(clickMonitor)
         }
         clickMonitor = nil
+        if let gutterFrameObserver {
+            NotificationCenter.default.removeObserver(gutterFrameObserver)
+        }
+        gutterFrameObserver = nil
         markerView?.removeFromSuperview()
         markerView = nil
         changeObservation = nil
@@ -134,12 +139,11 @@ final class CommentEditorCoordinator: NSObject, @preconcurrency TextViewCoordina
               let gutter = firstSubview(of: GutterView.self, in: controller.scrollView) else {
             return
         }
-        let markerView = CommentGutterMarkerView(frame: gutter.bounds)
-        markerView.autoresizingMask = [.width, .height]
+        let markerView = CommentGutterMarkerView(frame: .zero)
         markerView.onSelectThread = { [weak self] threadID in
             self?.openOverlay(threadID: threadID, created: false)
         }
-        gutter.addSubview(markerView, positioned: .above, relativeTo: nil)
+        gutterFrameObserver = installGutterMarkerStrip(markerView, tracking: gutter)
         self.markerView = markerView
     }
 

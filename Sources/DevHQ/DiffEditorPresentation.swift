@@ -75,6 +75,7 @@ final class DiffEditorCoordinator: NSObject, @preconcurrency TextViewCoordinator
     private var clickMonitor: Any?
     private var snapshot = DiffEditorSnapshot()
     private var isEnabled = false
+    private var gutterFrameObserver: Any?
 
     func prepareCoordinator(controller: TextViewController) {
         self.controller = controller
@@ -95,6 +96,10 @@ final class DiffEditorCoordinator: NSObject, @preconcurrency TextViewCoordinator
             NSEvent.removeMonitor(clickMonitor)
         }
         clickMonitor = nil
+        if let gutterFrameObserver {
+            NotificationCenter.default.removeObserver(gutterFrameObserver)
+        }
+        gutterFrameObserver = nil
         markerView?.removeFromSuperview()
         overlayView?.removeFromSuperview()
         markerView = nil
@@ -123,12 +128,11 @@ final class DiffEditorCoordinator: NSObject, @preconcurrency TextViewCoordinator
             return
         }
 
-        let markerView = DiffGutterMarkerView(frame: gutter.bounds)
-        markerView.autoresizingMask = [.width, .height]
+        let markerView = DiffGutterMarkerView(frame: .zero)
         markerView.onSelectHunk = { [weak self] hunkID in
             self?.openOverlay(for: hunkID)
         }
-        gutter.addSubview(markerView, positioned: .above, relativeTo: nil)
+        gutterFrameObserver = installGutterMarkerStrip(markerView, tracking: gutter)
         self.markerView = markerView
     }
 
@@ -348,4 +352,48 @@ private extension DiffEditorHunk.Line.Kind {
         case .deletion: Color(nsColor: .systemRed).opacity(0.12)
         }
     }
+}
+
+/// Width of the gutter strip reserved for DevHQ's diff and comment markers.
+///
+/// The markers only ever occupy CodeEdit's leading gutter inset (20pt), left of
+/// the line numbers.
+let gutterMarkerStripWidth: CGFloat = 20
+
+/// Installs a marker strip that tracks `gutter`'s geometry.
+///
+/// The strip is added as a *sibling* above the gutter rather than as its
+/// subview: `GutterView` is layer-backed with a `.onSetNeedsDisplay` redraw
+/// policy, and adding a subview to it after it is on screen stops it painting
+/// its line numbers entirely. Matching the gutter's frame keeps the strip in
+/// the same coordinate space, so marker rects can use raw layout-manager
+/// `yPos` values exactly like the gutter's own line-number drawing does.
+@MainActor
+func installGutterMarkerStrip(_ markerView: NSView, tracking gutter: NSView) -> Any? {
+    guard let host = gutter.superview else { return nil }
+    markerView.frame = gutterMarkerStripFrame(tracking: gutter)
+    host.addSubview(markerView, positioned: .above, relativeTo: gutter)
+
+    gutter.postsFrameChangedNotifications = true
+    return NotificationCenter.default.addObserver(
+        forName: NSView.frameDidChangeNotification,
+        object: gutter,
+        queue: .main
+    ) { [weak markerView, weak gutter] _ in
+        MainActor.assumeIsolated {
+            guard let markerView, let gutter else { return }
+            markerView.frame = gutterMarkerStripFrame(tracking: gutter)
+            markerView.needsDisplay = true
+        }
+    }
+}
+
+@MainActor
+func gutterMarkerStripFrame(tracking gutter: NSView) -> NSRect {
+    NSRect(
+        x: gutter.frame.minX,
+        y: gutter.frame.minY,
+        width: gutterMarkerStripWidth,
+        height: gutter.frame.height
+    )
 }
