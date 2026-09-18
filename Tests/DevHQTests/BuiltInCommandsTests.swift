@@ -17,6 +17,7 @@ final class BuiltInCommandsTests: XCTestCase {
 
         XCTAssertEqual(Set(manager.commandsByID.keys), [
             "devhq:open-remote-repo", "devhq:sync-remote-repos",
+            "devhq:toggle-git-history",
             "worktree:add-repo", "file:new", "file:new-dir", "file:close",
             "terminal:new", "terminal:close", "agent:create", "git:toggle-diff",
             "git:filter-full", "git:filter-uncommitted", "git:filter-staged",
@@ -79,7 +80,8 @@ final class BuiltInCommandsTests: XCTestCase {
         XCTAssertEqual(
             try manager.commands(in: CommandContext(view: .file)).map(\.id),
             [
-                "devhq:open-remote-repo", "devhq:sync-remote-repos", "file:new",
+                "devhq:open-remote-repo", "devhq:sync-remote-repos",
+                "devhq:toggle-git-history", "file:new",
                 "file:new-dir", "git:filter-full", "git:filter-head",
                 "git:filter-staged", "git:filter-uncommitted", "git:toggle-diff",
                 "terminal:new", "worktree:add-repo"
@@ -88,7 +90,8 @@ final class BuiltInCommandsTests: XCTestCase {
         XCTAssertEqual(
             try manager.commands(in: CommandContext(view: .document)).map(\.id),
             [
-                "devhq:open-remote-repo", "devhq:sync-remote-repos", "file:new",
+                "devhq:open-remote-repo", "devhq:sync-remote-repos",
+                "devhq:toggle-git-history", "file:new",
                 "file:new-dir", "git:filter-full", "git:filter-head",
                 "git:filter-staged", "git:filter-uncommitted", "git:toggle-diff",
                 "terminal:new", "worktree:add-repo"
@@ -101,7 +104,8 @@ final class BuiltInCommandsTests: XCTestCase {
         XCTAssertEqual(
             try manager.commands(in: CommandContext(view: .document)).map(\.id),
             [
-                "devhq:open-remote-repo", "devhq:sync-remote-repos", "file:close",
+                "devhq:open-remote-repo", "devhq:sync-remote-repos",
+                "devhq:toggle-git-history", "file:close",
                 "file:new", "file:new-dir", "git:filter-full",
                 "git:filter-head", "git:filter-staged", "git:filter-uncommitted",
                 "git:toggle-diff", "terminal:new", "worktree:add-repo"
