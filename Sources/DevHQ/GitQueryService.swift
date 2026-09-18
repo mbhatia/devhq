@@ -226,7 +226,8 @@ public actor GitQueryService: GitQuerying {
         )
     }
 
-    private static func parentState(
+    /// Internal so `GitHistoryService` reuses the same parent-branch ladder.
+    static func parentState(
         in repositoryURL: URL,
         preferred: String? = nil,
         mirror: String? = nil
@@ -330,8 +331,15 @@ public actor GitQueryService: GitQuerying {
                     parentState: .noParent(message: "This commit has no parent.")
                 )
             }
+            // Include the pre-rename path so a renamed file diffs as a rename
+            // rather than a whole-file addition.
+            var historicalPath = ["--"]
+            if let oldPath = request.historicalOldPath, oldPath != request.filePath {
+                historicalPath.append(oldPath)
+            }
+            historicalPath.append(request.filePath)
             return DiffComparison(
-                arguments: ["diff"] + common + [parent, commit] + path,
+                arguments: ["diff"] + common + [parent, commit] + historicalPath,
                 liveTextBase: nil,
                 parentState: .resolved(reference: "\(commit)^1", mergeBase: parent)
             )
@@ -484,7 +492,8 @@ public actor GitQueryService: GitQuerying {
         }
     }
 
-    private static func runGit(
+    /// Internal so `GitHistoryService` shares the same process invocation.
+    static func runGit(
         _ arguments: [String],
         in repositoryURL: URL,
         allowedExitStatuses: Set<Int32> = [0]

@@ -77,6 +77,7 @@ struct DiffEditorConfiguration {
                 selectedParent: selectedParent,
                 mirrorParent: mirrorParent,
                 historicalCommit: context.historicalContext?.commitID,
+                historicalOldPath: context.historicalContext?.oldPath,
                 contextID: UUID().uuidString
             )
             let result = try await git.diff(request)

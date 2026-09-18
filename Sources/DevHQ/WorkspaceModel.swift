@@ -56,6 +56,9 @@ final class EditorDocument: ObservableObject, Identifiable {
     let treeNodeID: String?
     let language: CodeLanguage
     let isReadOnly: Bool
+    /// Present for read-only snapshots opened from the Git History pane; the
+    /// diff overlay then shows that commit's hunks instead of working-tree ones.
+    let historicalContext: DiffEditorContext.HistoricalContext?
     @Published private(set) var snapshotFilterMode: FileExplorerFilterMode?
     @Published private(set) var snapshotComparisonRevision: String?
     @Published var text: String {
@@ -77,10 +80,12 @@ final class EditorDocument: ObservableObject, Identifiable {
         isEphemeral: Bool = false,
         isReadOnly: Bool = false,
         snapshotFilterMode: FileExplorerFilterMode? = nil,
-        snapshotComparisonRevision: String? = nil
+        snapshotComparisonRevision: String? = nil,
+        historicalContext: DiffEditorContext.HistoricalContext? = nil
     ) {
         self.url = url
         self.treeNodeID = treeNodeID
+        self.historicalContext = historicalContext
         self.text = text
         self.savedText = savedText ?? text
         self.isEphemeral = isEphemeral
@@ -167,6 +172,8 @@ final class WorkspaceModel: ObservableObject {
 
     @Published private(set) var rootURL: URL?
     let fileTree = TreeModel<String, FileItem>()
+    /// State for the Git History pane, which swaps in for the file explorer.
+    let gitHistory: GitHistoryModel
     @Published private(set) var documents: [EditorDocument] = []
     @Published var selectedDocumentID: UUID?
     @Published private(set) var tabs: [EditorTab] = []
@@ -211,10 +218,14 @@ final class WorkspaceModel: ObservableObject {
     init(
         arguments: [String] = CommandLine.arguments,
         stateStore: WorkspaceStatePersisting? = nil,
-        gitQuery: (any GitQuerying)? = nil
+        gitQuery: (any GitQuerying)? = nil,
+        gitHistory: GitHistoryModel? = nil
     ) {
         self.stateStore = stateStore
         self.gitQuery = gitQuery
+        let gitHistory = gitHistory ?? GitHistoryModel()
+        self.gitHistory = gitHistory
+        gitHistory.attach(to: self)
         openCommandLineWorkspace(arguments)
     }
 
@@ -901,6 +912,38 @@ final class WorkspaceModel: ObservableObject {
         deletedPreviewRequestID = UUID()
     }
 
+    /// Opens a read-only snapshot of a file as of a historical commit, chosen
+    /// in the Git History pane. The attached historical context scopes the
+    /// diff overlay to that commit's own hunks.
+    func openGitHistorySnapshot(
+        repositoryURL: URL,
+        commit: GitHistoryCommit,
+        change: GitFileChange,
+        text: String,
+        asPreview: Bool
+    ) {
+        guard rootURL == repositoryURL else { return }
+        let treeNodeID = "git-history:\(commit.hash):\(change.path)"
+        if let existing = documents.first(where: { $0.treeNodeID == treeNodeID }) {
+            if !asPreview { existing.promote() }
+            activate(existing)
+            return
+        }
+        openDocument(
+            url: repositoryURL.appendingPathComponent(change.path),
+            text: text,
+            treeNodeID: treeNodeID,
+            asPreview: asPreview,
+            isReadOnly: true,
+            historicalContext: DiffEditorContext.HistoricalContext(
+                commitID: commit.hash,
+                parentCommitID: nil,
+                oldPath: change.oldPath,
+                newPath: change.path
+            )
+        )
+    }
+
     private func openDocument(
         url: URL,
         text: String,
@@ -908,7 +951,8 @@ final class WorkspaceModel: ObservableObject {
         asPreview: Bool,
         isReadOnly: Bool,
         snapshotFilterMode: FileExplorerFilterMode? = nil,
-        snapshotComparisonRevision: String? = nil
+        snapshotComparisonRevision: String? = nil,
+        historicalContext: DiffEditorContext.HistoricalContext? = nil
     ) {
         if let existing = documents.first(where: {
             treeNodeID != nil ? $0.treeNodeID == treeNodeID : $0.url == url
@@ -950,7 +994,8 @@ final class WorkspaceModel: ObservableObject {
             isEphemeral: asPreview,
             isReadOnly: isReadOnly,
             snapshotFilterMode: snapshotFilterMode,
-            snapshotComparisonRevision: snapshotComparisonRevision
+            snapshotComparisonRevision: snapshotComparisonRevision,
+            historicalContext: historicalContext
         )
         if asPreview,
            let oldPreviewIndex = documents.firstIndex(where: {
@@ -970,6 +1015,7 @@ final class WorkspaceModel: ObservableObject {
 
     private func refreshReadOnlySnapshotIfNeeded(_ document: EditorDocument) {
         guard document.isReadOnly,
+              document.historicalContext == nil,
               (document.snapshotFilterMode != fileFilterMode
                 || document.snapshotComparisonRevision != fileFilterComparisonRevision),
               let path = document.treeNodeID,
@@ -1014,7 +1060,8 @@ final class WorkspaceModel: ObservableObject {
             fileURL: document.url,
             filterIdentity: fileFilterMode.rawValue,
             currentText: document.text,
-            comparisonRevision: fileFilterComparisonRevision
+            comparisonRevision: fileFilterComparisonRevision,
+            historicalContext: document.historicalContext
         )
         return DiffEditorConfiguration(
             isEnabled: isDiffOverlayEnabled,
@@ -1260,6 +1307,7 @@ final class WorkspaceModel: ObservableObject {
         fileFilterComparisonRevision = comparisonRevision(for: snapshot)
         if let document = selectedDocument,
            document.isReadOnly,
+           document.historicalContext == nil,
            let path = document.treeNodeID {
             openDeletedSnapshot(
                 FileNode(
