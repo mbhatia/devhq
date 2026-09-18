@@ -122,6 +122,7 @@ struct ContentView: View {
 
             CommandPalette(controller: commandPalette)
         }
+        .font(uiFont)
         .preferredColorScheme(settings.windowTheme.colorScheme)
         .onAppear {
             worktreeExplorer.syncSelection(with: workspace.rootURL)
@@ -201,6 +202,14 @@ struct ContentView: View {
         if workspace.selectedDocument != nil { return .document }
         if workspace.rootURL != nil { return .file }
         return .worktree
+    }
+
+    private var uiFont: Font? {
+        guard !settings.uiFontName.isEmpty,
+              NSFont(name: settings.uiFontName, size: NSFont.systemFontSize) != nil else {
+            return nil
+        }
+        return .custom(settings.uiFontName, size: NSFont.systemFontSize)
     }
 }
 
@@ -630,7 +639,7 @@ private struct EditorArea: View {
                     )
                         .id(document.id)
                 } else if let terminal = workspace.selectedTerminal {
-                    TerminalView(session: terminal)
+                    TerminalView(session: terminal, fontName: settings.terminalFontName)
                         .id(terminal.id)
                 } else {
                     VStack(spacing: 12) {
@@ -755,6 +764,7 @@ private struct FileEditor: View {
             showGutter: settings.showGutter,
             showMinimap: settings.showMinimap,
             showFoldingRibbon: settings.showFoldingRibbon,
+            fontName: settings.codeFontName,
             isEditable: !document.isReadOnly,
             diffConfiguration: workspace.diffEditorConfiguration(for: document)
         )

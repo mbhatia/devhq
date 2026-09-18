@@ -4,6 +4,31 @@ import XCTest
 
 final class LuaCommandTests: XCTestCase {
     @MainActor
+    func testLuaConfigurationSetsFonts() throws {
+        let directory = try makeConfigurationDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        try writeInit(
+            """
+            local devhq = require "devhq"
+            devhq.fonts.ui = "Avenir Next"
+            devhq.fonts.code = "JetBrainsMono Nerd Font Mono"
+            devhq.fonts.terminal = "JetBrainsMono Nerd Font Mono"
+            """,
+            in: directory
+        )
+
+        let settings = EditorSettings()
+        let host = LuaPluginHost(settings: settings, configDirectory: directory)
+        host.loadUserConfiguration()
+
+        XCTAssertNil(settings.pluginError)
+        XCTAssertEqual(settings.uiFontName, "Avenir Next")
+        XCTAssertEqual(settings.codeFontName, "JetBrainsMono Nerd Font Mono")
+        XCTAssertEqual(settings.terminalFontName, "JetBrainsMono Nerd Font Mono")
+    }
+
+    @MainActor
     func testLuaCommandsSurviveConfigurationLoadAndRespectScopes() throws {
         let directory = try makeConfigurationDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }

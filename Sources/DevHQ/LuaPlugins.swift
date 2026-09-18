@@ -59,6 +59,9 @@ final class EditorSettings: ObservableObject {
     @Published var showGutter = true
     @Published var showMinimap = true
     @Published var showFoldingRibbon = true
+    @Published var uiFontName = ""
+    @Published var codeFontName = ""
+    @Published var terminalFontName = ""
     @Published var gitWorktreePath = ".worktrees"
     @Published var pluginError: String?
 }
@@ -234,6 +237,34 @@ private final class LuaDocViewAPI {
     @LuaFunction("set_folding")
     func setFolding(_ visible: Bool) {
         folding = visible
+    }
+}
+
+@MainActor
+@LuaModule("fonts")
+private final class LuaFontsAPI {
+    let settings: EditorSettings
+
+    init(settings: EditorSettings) {
+        self.settings = settings
+    }
+
+    @LuaField("ui")
+    var ui: String {
+        get { settings.uiFontName }
+        set { settings.uiFontName = newValue }
+    }
+
+    @LuaField("code")
+    var code: String {
+        get { settings.codeFontName }
+        set { settings.codeFontName = newValue }
+    }
+
+    @LuaField("terminal")
+    var terminal: String {
+        get { settings.terminalFontName }
+        set { settings.terminalFontName = newValue }
     }
 }
 
@@ -426,7 +457,8 @@ final class LuaPluginHost: ObservableObject {
             LuaWindowAPI(settings: settings),
             LuaSplitAPI(settings: settings),
             LuaTreeViewAPI(settings: settings),
-            LuaDocViewAPI(settings: settings)
+            LuaDocViewAPI(settings: settings),
+            LuaFontsAPI(settings: settings)
         ]
         let openModule: LuaClosure = { state in
             state.newtable(nrec: CInt(modules.count + 5))

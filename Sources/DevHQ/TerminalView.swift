@@ -4,13 +4,15 @@ import SwiftUI
 
 struct TerminalView: NSViewRepresentable {
     @ObservedObject var session: TerminalSession
+    let fontName: String
 
     func makeNSView(context: Context) -> NativeTerminalView {
-        NativeTerminalView(session: session)
+        NativeTerminalView(session: session, fontName: fontName)
     }
 
     func updateNSView(_ view: NativeTerminalView, context: Context) {
         view.session = session
+        view.setFont(named: fontName)
         view.snapshot = session.snapshot
         view.needsDisplay = true
     }
@@ -23,9 +25,10 @@ struct TerminalView: NSViewRepresentable {
 final class NativeTerminalView: NSView, NSTextInputClient {
     var session: TerminalSession
     var snapshot: TerminalRenderSnapshot
-    private let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-    private let boldFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
-    private lazy var italicFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    private var font: NSFont
+    private var boldFont: NSFont
+    private var italicFont: NSFont
+    private var fontName: String
     private(set) var cellWidth: CGFloat = 8
     private(set) var cellHeight: CGFloat = 17
     private var baseline: CGFloat = 13
@@ -35,13 +38,31 @@ final class NativeTerminalView: NSView, NSTextInputClient {
     private var contextMenuLinkPoint: (column: Int, row: Int)?
     private var applicationMouseTracking = false
 
-    init(session: TerminalSession) {
+    init(session: TerminalSession, fontName: String) {
         self.session = session
         snapshot = session.snapshot
+        self.fontName = fontName
+        font = EditorFont.monospaced(named: fontName, size: 13, weight: .regular)
+        boldFont = EditorFont.monospaced(named: fontName, size: 13, weight: .bold)
+        italicFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
         layer?.masksToBounds = true
+        updateFontMetrics()
+    }
+
+    func setFont(named name: String) {
+        guard fontName != name else { return }
+        fontName = name
+        font = EditorFont.monospaced(named: name, size: 13, weight: .regular)
+        boldFont = EditorFont.monospaced(named: name, size: 13, weight: .bold)
+        italicFont = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        updateFontMetrics()
+        updateSize()
+    }
+
+    private func updateFontMetrics() {
         let ctFont = font as CTFont
         var glyph = CTFontGetGlyphWithName(ctFont, "M" as CFString)
         var advance = CGSize.zero

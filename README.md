@@ -20,6 +20,9 @@ local devhq = require "devhq"
 
 devhq.window.theme = "light" -- "system", "light", or "dark"
 devhq.treeview.size = 300
+devhq.fonts.ui = "Avenir Next"
+devhq.fonts.code = "JetBrainsMono Nerd Font Mono"
+devhq.fonts.terminal = "JetBrainsMono Nerd Font Mono"
 ```
 
 The `devhq` module follows the same broad separation used by Lite XL:
@@ -29,6 +32,7 @@ The `devhq` module follows the same broad separation used by Lite XL:
 - `split`: horizontal or vertical pane direction
 - `treeview`: visibility and pane size
 - `docview`: gutter, minimap, and folding-ribbon visibility
+- `fonts`: installed font names for UI, code, and terminal text
 - `terminal`: terminal-tab creation
 
 Lua modules below the configuration directory can be loaded normally. For example,

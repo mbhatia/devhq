@@ -10,6 +10,7 @@ struct SourceEditorView: View {
     let showGutter: Bool
     let showMinimap: Bool
     let showFoldingRibbon: Bool
+    let fontName: String
     let isEditable: Bool
     let diffConfiguration: DiffEditorConfiguration?
 
@@ -24,6 +25,7 @@ struct SourceEditorView: View {
         showGutter: Bool,
         showMinimap: Bool,
         showFoldingRibbon: Bool,
+        fontName: String,
         isEditable: Bool = true,
         diffConfiguration: DiffEditorConfiguration? = nil
     ) {
@@ -33,6 +35,7 @@ struct SourceEditorView: View {
         self.showGutter = showGutter
         self.showMinimap = showMinimap
         self.showFoldingRibbon = showFoldingRibbon
+        self.fontName = fontName
         self.isEditable = isEditable
         self.diffConfiguration = diffConfiguration
     }
@@ -47,6 +50,7 @@ struct SourceEditorView: View {
                     showGutter: showGutter,
                     showMinimap: showMinimap,
                     showFoldingRibbon: showFoldingRibbon,
+                    fontName: fontName,
                     isEditable: isEditable
                 ),
                 state: $state,
@@ -85,12 +89,13 @@ struct SourceEditorView: View {
         showGutter: Bool = true,
         showMinimap: Bool = true,
         showFoldingRibbon: Bool = true,
+        fontName: String = "",
         isEditable: Bool = true
     ) -> SourceEditorConfiguration {
         SourceEditorConfiguration(
             appearance: .init(
                 theme: isDark ? .devHQDark : .devHQLight,
-                font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+                font: EditorFont.monospaced(named: fontName, size: 13, weight: .regular),
                 lineHeightMultiple: 1.2,
                 wrapLines: false,
                 tabWidth: 4
