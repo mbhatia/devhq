@@ -63,6 +63,7 @@ final class EditorSettings: ObservableObject {
     @Published var codeFontName = ""
     @Published var terminalFontName = ""
     @Published var gitWorktreePath = ".worktrees"
+    @Published var webView = WebViewConfiguration()
     @Published var pluginError: String?
 }
 
@@ -294,7 +295,7 @@ private final class LuaConfigAPI: LuaModuleRegistrable {
     }
 
     func pushLuaTable(onto state: LuaPluginState) {
-        state.newtable(nrec: 2)
+        state.newtable(nrec: 3)
         let git = LuaGitConfigAPI(settings: settings)
         git.pushLuaTable(onto: state)
         state.rawset(-2, utf8Key: git.luaName)
@@ -303,6 +304,9 @@ private final class LuaConfigAPI: LuaModuleRegistrable {
         AgentProfileDefaults.pushCodexTable(onto: state)
         state.rawset(-2, utf8Key: AgentProfileDefaults.codexName)
         state.rawset(-2, utf8Key: "agents")
+
+        WebViewLuaConfiguration.pushDefaultsTable(onto: state, configuration: settings.webView)
+        state.rawset(-2, utf8Key: "webview")
     }
 }
 
@@ -376,6 +380,7 @@ final class LuaPluginHost: ObservableObject {
             try loadScript(at: scriptURL)
             let profiles = try AgentProfileConfiguration.decode(from: state)
             agentProfileRegistry.replace(with: profiles)
+            settings.webView = try WebViewLuaConfiguration.decode(from: state)
         } catch {
             settings.pluginError = "\(scriptURL.path): \(error.localizedDescription)"
         }

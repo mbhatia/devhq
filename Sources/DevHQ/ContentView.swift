@@ -119,9 +119,7 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
                         .background {
                             PaneActivationMonitor(isEnabled: !commandPalette.isPresented) {
-                                commandContext.activate(
-                                    workspace.selectedTerminal == nil ? .document : .terminal
-                                )
+                                commandContext.activate(editorAreaCommandView(for: workspace))
                             }
                         }
 
@@ -155,7 +153,7 @@ struct ContentView: View {
             commandContext.activate(initialCommandView)
         }
         .onChange(of: workspace.selectedTabID) { _ in
-            commandContext.activate(workspace.selectedTerminal == nil ? .document : .terminal)
+            commandContext.activate(editorAreaCommandView(for: workspace))
         }
         .onChange(of: settings.treeViewSize) { width in
             guard tracksLayoutChanges,
@@ -221,6 +219,7 @@ struct ContentView: View {
 
     private var initialCommandView: CommandViewKind {
         if workspace.selectedTerminal != nil { return .terminal }
+        if workspace.selectedWebTab != nil { return .web }
         if workspace.selectedDocument != nil { return .document }
         if workspace.rootURL != nil { return .file }
         return .worktree
@@ -233,6 +232,13 @@ struct ContentView: View {
         }
         return .custom(settings.uiFontName, size: NSFont.systemFontSize)
     }
+}
+
+@MainActor
+private func editorAreaCommandView(for workspace: WorkspaceModel) -> CommandViewKind {
+    if workspace.selectedTerminal != nil { return .terminal }
+    if workspace.selectedWebTab != nil { return .web }
+    return .document
 }
 
 private struct PaneWidthObserver: View {
@@ -666,6 +672,9 @@ private struct EditorArea: View {
                 } else if let terminal = workspace.selectedTerminal {
                     TerminalView(session: terminal, fontName: settings.terminalFontName)
                         .id(terminal.id)
+                } else if let webTab = workspace.selectedWebTab {
+                    WebPreviewView(tab: webTab)
+                        .id(webTab.id)
                 } else {
                     VStack(spacing: 12) {
                         Image(systemName: "doc.text")
@@ -705,6 +714,13 @@ private struct TabStrip: View {
                             isSelected: workspace.selectedTabID == terminal.id,
                             select: { workspace.select(terminal) },
                             close: { workspace.close(terminal) }
+                        )
+                    case .web(let webTab):
+                        WebTabButton(
+                            tab: webTab,
+                            isSelected: workspace.selectedTabID == webTab.id,
+                            select: { workspace.select(webTab) },
+                            close: { workspace.close(webTab) }
                         )
                     }
                 }
@@ -791,7 +807,9 @@ private struct FileEditor: View {
             showFoldingRibbon: settings.showFoldingRibbon,
             fontName: settings.codeFontName,
             isEditable: !document.isReadOnly,
-            diffConfiguration: workspace.diffEditorConfiguration(for: document)
+            diffConfiguration: workspace.diffEditorConfiguration(for: document),
+            cursorRequest: document.pendingCursor,
+            onCursorRequestHandled: { document.pendingCursor = nil }
         )
     }
 }

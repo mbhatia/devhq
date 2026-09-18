@@ -5,6 +5,7 @@ enum CommandViewKind: String, CaseIterable, Hashable {
     case file
     case document
     case terminal
+    case web
 }
 
 struct CommandContext: Equatable {

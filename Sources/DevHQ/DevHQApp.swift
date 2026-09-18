@@ -125,6 +125,17 @@ struct DevHQApp: App {
             plugins.settings.pluginError =
                 "Could not register built-in commands: \(error.localizedDescription)"
         }
+        do {
+            try registerWebViewCommands(
+                in: commandManager,
+                workspace: workspace,
+                settings: plugins.settings
+            )
+        } catch {
+            plugins.settings.pluginError =
+                "Could not register web commands: \(error.localizedDescription)"
+        }
+        installTerminalLinkRouting(workspace: workspace, settings: plugins.settings)
         let hasExplicitCommandLineWorkspace = Self.argumentValue(after: "--workspace") != nil
         worktreeExplorer.restore(activateSelection: !hasExplicitCommandLineWorkspace)
         if hasExplicitCommandLineWorkspace {

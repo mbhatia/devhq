@@ -3,6 +3,18 @@ import CodeEditLanguages
 import CodeEditSourceEditor
 import SwiftUI
 
+/// A one-shot request to move the editor caret to a 1-indexed line and column.
+struct EditorCursorRequest: Equatable {
+    let line: Int
+    let column: Int
+    private let requestID = UUID()
+
+    init(line: Int, column: Int) {
+        self.line = line
+        self.column = column
+    }
+}
+
 struct SourceEditorView: View {
     @Binding var text: String
     let language: CodeLanguage
@@ -13,10 +25,13 @@ struct SourceEditorView: View {
     let fontName: String
     let isEditable: Bool
     let diffConfiguration: DiffEditorConfiguration?
+    let cursorRequest: EditorCursorRequest?
+    let onCursorRequestHandled: (() -> Void)?
 
     @State private var state = SourceEditorState()
     @State private var syntaxHighlighter = CorrectedTreeSitterHighlightProvider()
     @StateObject private var diffPresentation = DiffEditorPresentation()
+    @StateObject private var cursorCoordinator = EditorCursorCoordinator()
 
     init(
         text: Binding<String>,
@@ -27,7 +42,9 @@ struct SourceEditorView: View {
         showFoldingRibbon: Bool,
         fontName: String,
         isEditable: Bool = true,
-        diffConfiguration: DiffEditorConfiguration? = nil
+        diffConfiguration: DiffEditorConfiguration? = nil,
+        cursorRequest: EditorCursorRequest? = nil,
+        onCursorRequestHandled: (() -> Void)? = nil
     ) {
         _text = text
         self.language = language
@@ -38,6 +55,8 @@ struct SourceEditorView: View {
         self.fontName = fontName
         self.isEditable = isEditable
         self.diffConfiguration = diffConfiguration
+        self.cursorRequest = cursorRequest
+        self.onCursorRequestHandled = onCursorRequestHandled
     }
 
     var body: some View {
@@ -55,7 +74,7 @@ struct SourceEditorView: View {
                 ),
                 state: $state,
                 highlightProviders: [syntaxHighlighter],
-                coordinators: [diffPresentation.coordinator]
+                coordinators: [diffPresentation.coordinator, cursorCoordinator]
             )
 
             if diffConfiguration?.isEnabled == true,
@@ -71,6 +90,12 @@ struct SourceEditorView: View {
         }
         .task(id: diffLoadIdentity) {
             await diffPresentation.load(diffConfiguration)
+        }
+        .onAppear {
+            cursorCoordinator.apply(cursorRequest, onHandled: onCursorRequestHandled)
+        }
+        .onChange(of: cursorRequest) { request in
+            cursorCoordinator.apply(request, onHandled: onCursorRequestHandled)
         }
         .onDisappear {
             diffPresentation.invalidate()
@@ -117,6 +142,48 @@ struct SourceEditorView: View {
 private struct DiffLoadIdentity: Hashable {
     let isEnabled: Bool
     let context: DiffEditorContext?
+}
+
+/// Applies caret jump requests (e.g. terminal path:line:col links) once the
+/// editor's text controller is on screen.
+@MainActor
+final class EditorCursorCoordinator: NSObject, ObservableObject, @preconcurrency TextViewCoordinator {
+    private weak var controller: TextViewController?
+    private var hasAppeared = false
+    private var pending: (request: EditorCursorRequest, onHandled: (() -> Void)?)?
+    private var lastAppliedRequest: EditorCursorRequest?
+
+    func prepareCoordinator(controller: TextViewController) {
+        self.controller = controller
+    }
+
+    func controllerDidAppear(controller: TextViewController) {
+        hasAppeared = true
+        if let pending {
+            self.pending = nil
+            apply(pending.request, onHandled: pending.onHandled)
+        }
+    }
+
+    func destroy() {
+        controller = nil
+        hasAppeared = false
+        pending = nil
+    }
+
+    func apply(_ request: EditorCursorRequest?, onHandled: (() -> Void)?) {
+        guard let request, request != lastAppliedRequest else { return }
+        guard let controller, hasAppeared else {
+            pending = (request, onHandled)
+            return
+        }
+        lastAppliedRequest = request
+        controller.setCursorPositions(
+            [CursorPosition(line: request.line, column: request.column)],
+            scrollToVisible: true
+        )
+        onHandled?()
+    }
 }
 
 private extension EditorTheme {
