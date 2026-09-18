@@ -34,6 +34,8 @@ struct ContentView: View {
     @ObservedObject var commandPalette: CommandPaletteController
     @ObservedObject var commandContext: CommandContextTracker
     @ObservedObject var contextMenuRegistry: ContextMenuRegistry
+    @ObservedObject var terminalDrawer = TerminalDrawerModel()
+    @ObservedObject var sidebarVisibility = SidebarVisibilityModel()
     var tracksLayoutChanges = true
     @State private var hasRestoredLayout = false
     @State private var layoutRestorationRequestID = 0
@@ -42,6 +44,7 @@ struct ContentView: View {
         ZStack {
             HSplitView {
                 if settings.treeViewVisible {
+                    if sidebarVisibility.isWorktreeExplorerVisible {
                     WorktreeExplorerSidebar(
                         explorer: worktreeExplorer,
                         workspace: workspace,
@@ -79,6 +82,7 @@ struct ContentView: View {
                                 }
                             }
                         }
+                    }
 
                     Sidebar(
                         workspace: workspace,
@@ -109,15 +113,32 @@ struct ContentView: View {
                         }
                 }
 
-                EditorArea(workspace: workspace, settings: settings)
-                    .frame(minWidth: 500, maxWidth: .infinity)
-                    .background {
-                        PaneActivationMonitor(isEnabled: !commandPalette.isPresented) {
-                            commandContext.activate(
-                                workspace.selectedTerminal == nil ? .document : .terminal
-                            )
+                VSplitView {
+                    EditorArea(workspace: workspace, settings: settings)
+                        .frame(maxWidth: .infinity, minHeight: 200, maxHeight: .infinity)
+                        .background {
+                            PaneActivationMonitor(isEnabled: !commandPalette.isPresented) {
+                                commandContext.activate(
+                                    workspace.selectedTerminal == nil ? .document : .terminal
+                                )
+                            }
                         }
+
+                    if terminalDrawer.isVisible, terminalDrawer.session != nil {
+                        TerminalDrawerPane(drawer: terminalDrawer, settings: settings)
+                            .frame(
+                                minHeight: 120,
+                                idealHeight: TerminalDrawerModel.defaultHeight,
+                                maxHeight: .infinity
+                            )
+                            .background {
+                                PaneActivationMonitor(isEnabled: !commandPalette.isPresented) {
+                                    commandContext.activate(.terminal)
+                                }
+                            }
                     }
+                }
+                .frame(minWidth: 500, maxWidth: .infinity)
             }
 
             CommandPalette(controller: commandPalette)
