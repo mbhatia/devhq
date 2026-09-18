@@ -209,6 +209,14 @@ func registerBuiltInCommands(
     }
 
     try commandManager.add(
+        id: "devhq:toggle-git-history",
+        viewKinds: Set(CommandViewKind.allCases),
+        predicate: workspaceAvailable
+    ) { _ in
+        workspace.gitHistory.toggle()
+    }
+
+    try commandManager.add(
         id: "git:toggle-diff",
         viewKinds: Set(CommandViewKind.allCases),
         predicate: workspaceAvailable

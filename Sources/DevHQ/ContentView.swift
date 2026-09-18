@@ -82,6 +82,7 @@ struct ContentView: View {
 
                     Sidebar(
                         workspace: workspace,
+                        gitHistory: workspace.gitHistory,
                         contextMenuRegistry: contextMenuRegistry
                     )
                         .frame(
@@ -466,6 +467,7 @@ private struct WorktreeExplorerRow: View {
 
 private struct Sidebar: View {
     @ObservedObject var workspace: WorkspaceModel
+    @ObservedObject var gitHistory: GitHistoryModel
     @ObservedObject var contextMenuRegistry: ContextMenuRegistry
 
     var body: some View {
@@ -496,6 +498,8 @@ private struct Sidebar: View {
                 }
                 .padding()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if gitHistory.isActive {
+                GitHistoryPane(model: gitHistory)
             } else {
                 VStack(spacing: 0) {
                     ScrollView {
