@@ -66,6 +66,9 @@ final class EditorDocument: ObservableObject, Identifiable {
         }
     }
     @Published private(set) var isEphemeral: Bool
+    /// A one-shot caret jump (e.g. from a terminal path:line:col link) applied
+    /// by the editor view the next time it updates.
+    @Published var pendingCursor: EditorCursorRequest?
     private(set) var savedText: String
     private var isReplacingReadOnlySnapshot = false
 
@@ -124,11 +127,13 @@ final class EditorDocument: ObservableObject, Identifiable {
 enum EditorTab: Identifiable {
     case document(EditorDocument)
     case terminal(TerminalSession)
+    case web(WebViewTab)
 
     var id: UUID {
         switch self {
         case .document(let document): document.id
         case .terminal(let terminal): terminal.id
+        case .web(let web): web.id
         }
     }
 
@@ -140,6 +145,11 @@ enum EditorTab: Identifiable {
     var terminal: TerminalSession? {
         guard case .terminal(let terminal) = self else { return nil }
         return terminal
+    }
+
+    var web: WebViewTab? {
+        guard case .web(let web) = self else { return nil }
+        return web
     }
 }
 
@@ -472,6 +482,62 @@ final class WorkspaceModel: ObservableObject {
     func select(_ terminal: TerminalSession) {
         invalidateDeletedPreviewRequest()
         activateTab(id: terminal.id)
+    }
+
+    var selectedWebTab: WebViewTab? {
+        tabs.first { $0.id == selectedTabID }?.web
+    }
+
+    /// The active worktree's shared web preview tab, reused by link routing
+    /// and `devhq:open-webview`, if one is open. Web tabs park and restore
+    /// with the worktree's editor session like terminals do.
+    var sharedWebTab: WebViewTab? {
+        tabs.compactMap(\.web).first(where: \.isShared)
+    }
+
+    func select(_ webTab: WebViewTab) {
+        invalidateDeletedPreviewRequest()
+        activateTab(id: webTab.id)
+    }
+
+    /// Appends a web preview tab to the tab strip and selects it.
+    func addWebTab(_ webTab: WebViewTab) {
+        invalidateDeletedPreviewRequest()
+        tabs.append(.web(webTab))
+        activateTab(id: webTab.id)
+    }
+
+    func close(_ webTab: WebViewTab) {
+        if let index = tabs.firstIndex(where: { $0.id == webTab.id }) {
+            tabs.remove(at: index)
+            if selectedTabID == webTab.id { selectAdjacentTab(afterRemoving: index) }
+            return
+        }
+
+        for key in editorSessions.keys {
+            guard var session = editorSessions[key],
+                  let index = session.tabs.firstIndex(where: { $0.id == webTab.id }) else {
+                continue
+            }
+            session.tabs.remove(at: index)
+            if session.selectedTabID == webTab.id {
+                session.selectedTabID = session.lastSelectedDocumentID
+                session.selectedDocumentID = session.lastSelectedDocumentID
+            }
+            editorSessions[key] = session
+            return
+        }
+    }
+
+    /// Opens a file and jumps the caret to a 1-indexed line and column.
+    func openFile(_ url: URL, line: Int, column: Int? = nil) {
+        openFile(url)
+        guard let document = selectedDocument,
+              document.url == url.standardizedFileURL else { return }
+        document.pendingCursor = EditorCursorRequest(
+            line: max(1, line),
+            column: max(1, column ?? 1)
+        )
     }
 
     @discardableResult
