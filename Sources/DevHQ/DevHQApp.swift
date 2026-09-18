@@ -12,7 +12,8 @@ final class DevHQApplicationDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-@main
+// The entry point is `DevHQMain` (ReviewReplyCLI.swift), which dispatches
+// headless `devhq review …` invocations before launching the app.
 struct DevHQApp: App {
     @NSApplicationDelegateAdaptor(DevHQApplicationDelegate.self)
     private var applicationDelegate
@@ -26,6 +27,7 @@ struct DevHQApp: App {
     @StateObject private var layout: WorkspaceLayoutModel
     @StateObject private var terminalDrawer: TerminalDrawerModel
     @StateObject private var sidebarVisibility: SidebarVisibilityModel
+    @StateObject private var commentThreads: CommentThreadsController
     private static var snapshotWindow: NSWindow?
 
     init() {
@@ -136,6 +138,22 @@ struct DevHQApp: App {
                 "Could not register web commands: \(error.localizedDescription)"
         }
         installTerminalLinkRouting(workspace: workspace, settings: plugins.settings)
+        let commentThreads = CommentThreadsController(
+            workspace: workspace,
+            agentManager: agentManager
+        )
+        commentThreads.makeActive()
+        commentThreads.startWatching()
+        do {
+            try registerReviewCommentCommands(
+                in: commandManager,
+                workspace: workspace,
+                comments: commentThreads
+            )
+        } catch {
+            plugins.settings.pluginError =
+                "Could not register review comment commands: \(error.localizedDescription)"
+        }
         let hasExplicitCommandLineWorkspace = Self.argumentValue(after: "--workspace") != nil
         worktreeExplorer.restore(activateSelection: !hasExplicitCommandLineWorkspace)
         if hasExplicitCommandLineWorkspace {
@@ -155,6 +173,7 @@ struct DevHQApp: App {
         _layout = StateObject(wrappedValue: layout)
         _terminalDrawer = StateObject(wrappedValue: terminalDrawer)
         _sidebarVisibility = StateObject(wrappedValue: sidebarVisibility)
+        _commentThreads = StateObject(wrappedValue: commentThreads)
         applicationDelegate.terminationHandler = {
             agentManager.prepareForTermination()
             workspace.saveCurrentWorkspaceState()
@@ -198,7 +217,8 @@ struct DevHQApp: App {
                 commandContext: commandContext,
                 contextMenuRegistry: plugins.contextMenuRegistry,
                 terminalDrawer: terminalDrawer,
-                sidebarVisibility: sidebarVisibility
+                sidebarVisibility: sidebarVisibility,
+                reviewComments: commentThreads
             )
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -294,6 +314,7 @@ struct DevHQApp: App {
             commandPalette: commandPalette,
             commandContext: commandContext,
             contextMenuRegistry: contextMenuRegistry,
+            reviewComments: CommentThreadsController(workspace: model),
             tracksLayoutChanges: false
         )
             .frame(width: 1200, height: 760)

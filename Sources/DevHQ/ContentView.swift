@@ -36,6 +36,7 @@ struct ContentView: View {
     @ObservedObject var contextMenuRegistry: ContextMenuRegistry
     @ObservedObject var terminalDrawer = TerminalDrawerModel()
     @ObservedObject var sidebarVisibility = SidebarVisibilityModel()
+    @ObservedObject var reviewComments: CommentThreadsController
     var tracksLayoutChanges = true
     @State private var hasRestoredLayout = false
     @State private var layoutRestorationRequestID = 0
@@ -138,6 +139,11 @@ struct ContentView: View {
                     }
                 }
                 .frame(minWidth: 500, maxWidth: .infinity)
+
+                if reviewComments.isSidebarVisible {
+                    ReviewSidebarPane(controller: reviewComments)
+                        .frame(minWidth: 220, idealWidth: 280, maxWidth: 440)
+                }
             }
 
             CommandPalette(controller: commandPalette)
@@ -809,7 +815,12 @@ private struct FileEditor: View {
             isEditable: !document.isReadOnly,
             diffConfiguration: workspace.diffEditorConfiguration(for: document),
             cursorRequest: document.pendingCursor,
-            onCursorRequestHandled: { document.pendingCursor = nil }
+            onCursorRequestHandled: { document.pendingCursor = nil },
+            commentContext: CommentEditorContext(
+                documentID: document.id,
+                fileURL: document.url,
+                isReadOnly: document.isReadOnly
+            )
         )
     }
 }

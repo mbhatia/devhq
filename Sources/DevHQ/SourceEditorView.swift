@@ -27,11 +27,13 @@ struct SourceEditorView: View {
     let diffConfiguration: DiffEditorConfiguration?
     let cursorRequest: EditorCursorRequest?
     let onCursorRequestHandled: (() -> Void)?
+    let commentContext: CommentEditorContext?
 
     @State private var state = SourceEditorState()
     @State private var syntaxHighlighter = CorrectedTreeSitterHighlightProvider()
     @StateObject private var diffPresentation = DiffEditorPresentation()
     @StateObject private var cursorCoordinator = EditorCursorCoordinator()
+    @StateObject private var commentPresentation = CommentEditorPresentation()
 
     init(
         text: Binding<String>,
@@ -44,7 +46,8 @@ struct SourceEditorView: View {
         isEditable: Bool = true,
         diffConfiguration: DiffEditorConfiguration? = nil,
         cursorRequest: EditorCursorRequest? = nil,
-        onCursorRequestHandled: (() -> Void)? = nil
+        onCursorRequestHandled: (() -> Void)? = nil,
+        commentContext: CommentEditorContext? = nil
     ) {
         _text = text
         self.language = language
@@ -57,6 +60,7 @@ struct SourceEditorView: View {
         self.diffConfiguration = diffConfiguration
         self.cursorRequest = cursorRequest
         self.onCursorRequestHandled = onCursorRequestHandled
+        self.commentContext = commentContext
     }
 
     var body: some View {
@@ -74,7 +78,11 @@ struct SourceEditorView: View {
                 ),
                 state: $state,
                 highlightProviders: [syntaxHighlighter],
-                coordinators: [diffPresentation.coordinator, cursorCoordinator]
+                coordinators: [
+                    diffPresentation.coordinator,
+                    cursorCoordinator,
+                    commentPresentation.coordinator
+                ]
             )
 
             if diffConfiguration?.isEnabled == true,
@@ -96,6 +104,9 @@ struct SourceEditorView: View {
         }
         .onChange(of: cursorRequest) { request in
             cursorCoordinator.apply(request, onHandled: onCursorRequestHandled)
+        }
+        .task(id: commentContext) {
+            commentPresentation.bind(context: commentContext)
         }
         .onDisappear {
             diffPresentation.invalidate()

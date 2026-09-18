@@ -916,6 +916,32 @@ final class WorkspaceModel: ObservableObject {
         }
     }
 
+    /// Opens (or replaces) a read-only tab that is not backed by a file on
+    /// disk, such as a Git revision snapshot or a posted review-comment blob.
+    /// The tab is keyed by its synthetic title within the workspace root.
+    @discardableResult
+    func openReadOnlyTab(title: String, text: String) -> EditorDocument {
+        let base = rootURL ?? FileManager.default.temporaryDirectory
+        let url = base.appendingPathComponent(title, isDirectory: false).standardizedFileURL
+        let document = EditorDocument(url: url, text: text, isReadOnly: true)
+        if let index = documents.firstIndex(where: {
+            $0.isReadOnly && $0.treeNodeID == nil && $0.url == url
+        }) {
+            let previous = documents[index]
+            documents[index] = document
+            if let tabIndex = tabs.firstIndex(where: { $0.id == previous.id }) {
+                tabs[tabIndex] = .document(document)
+            } else {
+                tabs.append(.document(document))
+            }
+        } else {
+            documents.append(document)
+            tabs.append(.document(document))
+        }
+        activate(document)
+        return document
+    }
+
     private func openDeletedSnapshot(_ node: FileNode, asPreview: Bool) {
         if let document = documents.first(where: {
             $0.treeNodeID == node.id
