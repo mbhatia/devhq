@@ -77,17 +77,13 @@ func registerBuiltInContextMenus(
             throw ExplorerContextMenuError.cannotCreateRemoteWorktree
         }
         guard let branchName = promptForBranchName() else { return }
-        let targetURL = worktreeCreationURL(
-            repositoryRootURL: repository.rootURL,
-            configuredPath: settings.gitWorktreePath,
-            branchName: branchName
-        )
-        try worktreeManager.createWorktree(
-            in: repository.rootURL,
+        try performCreateWorktree(
+            repository: repository,
             branchName: branchName,
-            at: targetURL
+            settings: settings,
+            worktreeManager: worktreeManager,
+            worktreeExplorer: worktreeExplorer
         )
-        worktreeExplorer.refreshRepository(id: repository.id)
     }
 
     registry.add(
@@ -101,21 +97,13 @@ func registerBuiltInContextMenus(
         ) else {
             throw ExplorerContextMenuError.worktreeUnavailable
         }
-        guard repository.remoteSource == nil else {
-            throw ExplorerContextMenuError.cannotDeleteRemoteWorktree
-        }
-        guard !worktree.isMain else {
-            throw ExplorerContextMenuError.cannotDeleteMainWorktree
-        }
-        guard !workspace.hasUnsavedChanges(inWorkspaceAt: worktree.url) else {
-            throw ExplorerContextMenuError.unsavedChanges(worktree.url)
-        }
-        try worktreeManager.deleteWorktree(
-            in: repository.rootURL,
-            at: worktree.url
+        try performDeleteWorktree(
+            repository: repository,
+            worktree: worktree,
+            workspace: workspace,
+            worktreeManager: worktreeManager,
+            worktreeExplorer: worktreeExplorer
         )
-        workspace.closeWorkspace(at: worktree.url)
-        worktreeExplorer.refreshRepository(id: repository.id)
     }
 
     registry.add(
@@ -128,6 +116,59 @@ func registerBuiltInContextMenus(
             snapshot.target == .fileDirectory
         )
     }
+}
+
+/// Shared worktree creation behavior used by both the explorer context menu
+/// and the `devhq:create-worktree` palette command.
+@MainActor
+func performCreateWorktree(
+    repository: GitRepositoryInfo,
+    branchName: String,
+    settings: EditorSettings,
+    worktreeManager: any GitWorktreeManaging,
+    worktreeExplorer: WorktreeExplorerModel
+) throws {
+    guard repository.remoteSource == nil else {
+        throw ExplorerContextMenuError.cannotCreateRemoteWorktree
+    }
+    let targetURL = worktreeCreationURL(
+        repositoryRootURL: repository.rootURL,
+        configuredPath: settings.gitWorktreePath,
+        branchName: branchName
+    )
+    try worktreeManager.createWorktree(
+        in: repository.rootURL,
+        branchName: branchName,
+        at: targetURL
+    )
+    worktreeExplorer.refreshRepository(id: repository.id)
+}
+
+/// Shared worktree deletion behavior used by both the explorer context menu
+/// and the `devhq:delete-worktree` palette command.
+@MainActor
+func performDeleteWorktree(
+    repository: GitRepositoryInfo,
+    worktree: GitWorktreeInfo,
+    workspace: WorkspaceModel,
+    worktreeManager: any GitWorktreeManaging,
+    worktreeExplorer: WorktreeExplorerModel
+) throws {
+    guard repository.remoteSource == nil else {
+        throw ExplorerContextMenuError.cannotDeleteRemoteWorktree
+    }
+    guard !worktree.isMain else {
+        throw ExplorerContextMenuError.cannotDeleteMainWorktree
+    }
+    guard !workspace.hasUnsavedChanges(inWorkspaceAt: worktree.url) else {
+        throw ExplorerContextMenuError.unsavedChanges(worktree.url)
+    }
+    try worktreeManager.deleteWorktree(
+        in: repository.rootURL,
+        at: worktree.url
+    )
+    workspace.closeWorkspace(at: worktree.url)
+    worktreeExplorer.refreshRepository(id: repository.id)
 }
 
 func worktreeCreationURL(
@@ -212,7 +253,7 @@ func treeContextMenuEntries(
 }
 
 @MainActor
-private func promptForWorktreeBranchName() -> String? {
+func promptForWorktreeBranchName() -> String? {
     let branchField = NSTextField(string: "")
     branchField.placeholderString = "feature/my-branch"
     branchField.frame = NSRect(x: 0, y: 0, width: 320, height: 24)

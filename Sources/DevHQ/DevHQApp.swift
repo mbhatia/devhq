@@ -24,6 +24,8 @@ struct DevHQApp: App {
     @StateObject private var plugins: LuaPluginHost
     @StateObject private var agentManager: AgentManager
     @StateObject private var layout: WorkspaceLayoutModel
+    @StateObject private var terminalDrawer: TerminalDrawerModel
+    @StateObject private var sidebarVisibility: SidebarVisibilityModel
     private static var snapshotWindow: NSWindow?
 
     init() {
@@ -100,6 +102,8 @@ struct DevHQApp: App {
             settings: plugins.settings,
             worktreeManager: worktreeService
         )
+        let terminalDrawer = TerminalDrawerModel()
+        let sidebarVisibility = SidebarVisibilityModel()
         do {
             try registerBuiltInCommands(
                 in: commandManager,
@@ -107,6 +111,15 @@ struct DevHQApp: App {
                 worktreeExplorer: worktreeExplorer,
                 agentManager: agentManager,
                 agentProfiles: plugins.agentProfileRegistry
+            )
+            try registerCommandParityCommands(
+                in: commandManager,
+                workspace: workspace,
+                worktreeExplorer: worktreeExplorer,
+                settings: plugins.settings,
+                worktreeManager: worktreeService,
+                terminalDrawer: terminalDrawer,
+                sidebarVisibility: sidebarVisibility
             )
         } catch {
             plugins.settings.pluginError =
@@ -129,10 +142,13 @@ struct DevHQApp: App {
         _plugins = StateObject(wrappedValue: plugins)
         _agentManager = StateObject(wrappedValue: agentManager)
         _layout = StateObject(wrappedValue: layout)
+        _terminalDrawer = StateObject(wrappedValue: terminalDrawer)
+        _sidebarVisibility = StateObject(wrappedValue: sidebarVisibility)
         applicationDelegate.terminationHandler = {
             agentManager.prepareForTermination()
             workspace.saveCurrentWorkspaceState()
             workspace.closeAllTerminals()
+            terminalDrawer.terminate()
         }
 
         NSApplication.shared.setActivationPolicy(.regular)
@@ -169,7 +185,9 @@ struct DevHQApp: App {
                 commandManager: commandManager,
                 commandPalette: commandPalette,
                 commandContext: commandContext,
-                contextMenuRegistry: plugins.contextMenuRegistry
+                contextMenuRegistry: plugins.contextMenuRegistry,
+                terminalDrawer: terminalDrawer,
+                sidebarVisibility: sidebarVisibility
             )
                 .frame(minWidth: 900, minHeight: 600)
         }
@@ -204,6 +222,16 @@ struct DevHQApp: App {
                 }
                 .keyboardShortcut("w", modifiers: [.command])
                 .disabled(workspace.selectedTerminal == nil)
+
+                Button("Toggle Terminal Drawer") {
+                    do {
+                        try terminalDrawer.toggle(activeWorktree: workspace.rootURL)
+                    } catch {
+                        workspace.errorMessage = error.localizedDescription
+                    }
+                }
+                .keyboardShortcut("t", modifiers: [.option])
+                .disabled(workspace.rootURL == nil && terminalDrawer.session == nil)
 
                 Button("Command Palette…") {
                     commandPalette.present(
